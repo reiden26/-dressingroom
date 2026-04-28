@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <rect width="512" height="512" fill="#6366F1"/>
+  <g transform="translate(96, 48)">
+    <!-- Head -->
+    <circle cx="160" cy="60" r="45" fill="#fff"/>
+    <!-- Body outline (mirroring person) -->
+    <path d="M160 110
+             C140 110 125 125 125 145
+             L125 200
+             C125 215 115 230 100 235
+             L60 250
+             L60 290
+             L85 290
+             L85 380
+             L100 380
+             L100 290
+             L120 290
+             L120 380
+             L135 380
+             L135 290
+             L155 290
+             L155 380
+             L170 380
+             L170 290
+             L200 250
+             L160 235
+             C145 230 135 215 135 200
+             L135 145
+             C135 125 180 110 160 110Z"
+          fill="#fff" opacity="0.9"/>
+  </g>
+  <!-- Mirror frame -->
+  <rect x="48" y="32" width="416" height="448" rx="24" stroke="#fff" stroke-width="16" fill="none"/>
+  <rect x="64" y="48" width="384" height="416" rx="16" stroke="#fff" stroke-width="4" fill="none" opacity="0.3"/>
+</svg>

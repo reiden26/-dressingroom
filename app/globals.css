@@ -1,0 +1,226 @@
+@import '@fontsource/instrument-serif/400.css';
+@import '@fontsource/instrument-serif/400-italic.css';
+@import '@fontsource/instrument-sans/400.css';
+@import '@fontsource/instrument-sans/500.css';
+@import '@fontsource/instrument-sans/600.css';
+@import '@fontsource/jetbrains-mono/400.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@theme inline {
+  --font-sans: 'Instrument Sans', system-ui, sans-serif;
+  --font-serif: 'Instrument Serif', Georgia, serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: 'Instrument Sans', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* CSS Custom Properties */
+:root {
+  /* Slate palette for text */
+  --slate-400: #94a3b8;
+  --slate-500: #64748b;
+  --slate-600: #475569;
+  --slate-700: #334155;
+  --slate-800: #1e293b;
+
+  /* Accent colors */
+  --sky-500: #0ea5e9;
+  --sky-700: #0369a1;
+  --sky-50: #f0f9ff;
+  --amber-400: #fbbf24;
+  --amber-500: #f59e0b;
+  --emerald-500: #10b981;
+  --rose-500: #f43f5e;
+
+  /* Semantic */
+  --background: #000000;
+}
+
+/* Background */
+.bg-app {
+  background-color: #000;
+  min-height: 100vh;
+}
+
+/* Glass utilities */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.30);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.40);
+}
+
+.glass-card {
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+}
+
+.glass-pill {
+  background: rgba(255, 255, 255, 0.30);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.40);
+}
+
+/* Input */
+.glass-input {
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.70);
+  border: 1px solid rgba(255, 255, 255, 0.60);
+  padding: 10px 16px;
+  font-size: 13px;
+  color: #334155;
+  outline: none;
+  transition: all 0.15s ease;
+}
+
+.glass-input::placeholder {
+  color: #94a3b8;
+}
+
+.glass-input:focus {
+  box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.3);
+  border-color: #0ea5e9;
+}
+
+/* Label style */
+.label {
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #64748b;
+}
+
+/* Badge styles */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.badge-amber {
+  background-color: rgba(251, 191, 36, 0.7);
+  border: 1px solid rgba(251, 191, 36, 0.7);
+  color: #78350f;
+}
+
+.badge-emerald {
+  background-color: rgba(16, 185, 129, 0.2);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  color: #047857;
+}
+
+.badge-sky {
+  background-color: rgba(14, 165, 233, 0.15);
+  border: 1px solid rgba(14, 165, 233, 0.3);
+  color: #0369a1;
+}
+
+.badge-rose {
+  background-color: rgba(244, 63, 94, 0.15);
+  border: 1px solid rgba(244, 63, 94, 0.3);
+  color: #be123c;
+}
+
+/* Status dot */
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.status-dot-emerald { background-color: #10b981; }
+.status-dot-amber { background-color: #f59e0b; }
+.status-dot-sky { background-color: #0ea5e9; }
+.status-dot-rose { background-color: #f43f5e; }
+.status-dot-slate { background-color: #94a3b8; }
+
+/* Button styles */
+.btn-primary {
+  background-color: #334155;
+  color: white;
+  font-weight: 500;
+  padding: 10px 20px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.15s ease;
+  font-size: 13px;
+}
+
+.btn-primary:hover { background-color: #1e293b; }
+.btn-primary:active { transform: scale(0.98); }
+
+.btn-secondary {
+  background: rgba(255, 255, 255, 0.70);
+  color: #334155;
+  font-weight: 500;
+  padding: 8px 16px;
+  border-radius: 9999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.15s ease;
+  font-size: 13px;
+  border: 1px solid rgba(255, 255, 255, 0.60);
+}
+
+.btn-secondary:hover { background: rgba(255, 255, 255, 0.80); }
+.btn-secondary:active { transform: scale(0.98); }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: rgba(0, 0, 0, 0.05); }
+::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.15); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(0, 0, 0, 0.25); }
+
+/* Animation */
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in { animation: fade-in 0.3s ease-out forwards; }
+
+/* Text utilities */
+.text-slate-title { color: #1e293b; }
+.text-slate-body { color: #334155; }
+.text-slate-meta { color: #64748b; }
+.text-slate-placeholder { color: #94a3b8; }
+
+/* Display font class */
+.font-display {
+  font-family: 'Instrument Serif', Georgia, serif;
+}
