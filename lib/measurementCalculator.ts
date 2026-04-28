@@ -109,29 +109,35 @@ function computeVerticalScaleFactor(
   heightCm: number,
   imageHeight: number
 ): { scaleFactor: number; visibleRatio: number } | null {
-  const headCandidates: { lm: LandmarkWithVisibility | null; offset: number }[] = [
-    { lm: get(landmarks, LM.LEFT_EAR), offset: 0.06 },
-    { lm: get(landmarks, LM.RIGHT_EAR), offset: 0.06 },
-    { lm: get(landmarks, LM.LEFT_EYE), offset: 0.07 },
-    { lm: get(landmarks, LM.RIGHT_EYE), offset: 0.07 },
-    { lm: get(landmarks, LM.NOSE), offset: 0.1 },
-  ].filter((c) => c.lm !== null) as { lm: LandmarkWithVisibility; offset: number }[];
+  type Cand = { lm: LandmarkWithVisibility; offset: number };
 
-  const footCandidates: { lm: LandmarkWithVisibility | null; offset: number }[] = [
-    { lm: get(landmarks, LM.LEFT_FOOT_INDEX), offset: 0 },
-    { lm: get(landmarks, LM.RIGHT_FOOT_INDEX), offset: 0 },
-    { lm: get(landmarks, LM.LEFT_HEEL), offset: 0.02 },
-    { lm: get(landmarks, LM.RIGHT_HEEL), offset: 0.02 },
-    { lm: get(landmarks, LM.LEFT_ANKLE), offset: 0.04 },
-    { lm: get(landmarks, LM.RIGHT_ANKLE), offset: 0.04 },
-  ].filter((c) => c.lm !== null) as { lm: LandmarkWithVisibility; offset: number }[];
+  const headCandidates: Cand[] = (
+    [
+      { lm: get(landmarks, LM.LEFT_EAR), offset: 0.06 },
+      { lm: get(landmarks, LM.RIGHT_EAR), offset: 0.06 },
+      { lm: get(landmarks, LM.LEFT_EYE), offset: 0.07 },
+      { lm: get(landmarks, LM.RIGHT_EYE), offset: 0.07 },
+      { lm: get(landmarks, LM.NOSE), offset: 0.1 },
+    ] as { lm: LandmarkWithVisibility | null; offset: number }[]
+  ).filter((c): c is Cand => c.lm !== null);
+
+  const footCandidates: Cand[] = (
+    [
+      { lm: get(landmarks, LM.LEFT_FOOT_INDEX), offset: 0 },
+      { lm: get(landmarks, LM.RIGHT_FOOT_INDEX), offset: 0 },
+      { lm: get(landmarks, LM.LEFT_HEEL), offset: 0.02 },
+      { lm: get(landmarks, LM.RIGHT_HEEL), offset: 0.02 },
+      { lm: get(landmarks, LM.LEFT_ANKLE), offset: 0.04 },
+      { lm: get(landmarks, LM.RIGHT_ANKLE), offset: 0.04 },
+    ] as { lm: LandmarkWithVisibility | null; offset: number }[]
+  ).filter((c): c is Cand => c.lm !== null);
 
   if (headCandidates.length === 0 || footCandidates.length === 0) return null;
 
   // Topmost head landmark = smallest y (origin at top of frame).
-  const head = headCandidates.reduce((acc, cur) => (cur.lm.y < acc.lm.y ? cur : acc));
+  const head = headCandidates.reduce<Cand>((acc, cur) => (cur.lm.y < acc.lm.y ? cur : acc), headCandidates[0]);
   // Lowest foot landmark = largest y.
-  const foot = footCandidates.reduce((acc, cur) => (cur.lm.y > acc.lm.y ? cur : acc));
+  const foot = footCandidates.reduce<Cand>((acc, cur) => (cur.lm.y > acc.lm.y ? cur : acc), footCandidates[0]);
 
   const visibleNormalized = foot.lm.y - head.lm.y; // 0..1 of frame height
   if (visibleNormalized <= 0.05) return null;
