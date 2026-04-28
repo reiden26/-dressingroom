@@ -3,17 +3,29 @@
 import { useEffect, useRef, useState, forwardRef, useImperativeHandle } from 'react';
 import { KEY_LANDMARKS } from '@/lib/landmarkNames';
 
+export interface CapturedLandmark {
+  x: number;
+  y: number;
+  z: number;
+  visibility: number;
+}
+
 interface CameraFeedProps {
   className?: string;
+  onDetectionUpdate?: (state: 'no_person' | 'too_close' | 'partial' | 'good', coverage: number) => void;
 }
 
 export interface CameraFeedRef {
   videoElement: HTMLVideoElement | null;
   canvasElement: HTMLCanvasElement | null;
+  /** Returns the most recent set of landmarks detected for the current video frame, or null. */
+  getLatestLandmarks: () => CapturedLandmark[] | null;
+  /** Returns the actual video resolution being processed (matches landmark normalization). */
+  getVideoSize: () => { width: number; height: number } | null;
 }
 
 const CameraFeed = forwardRef<CameraFeedRef, CameraFeedProps>(
-  ({ className = '' }, ref) => {
+  ({ className = '', onDetectionUpdate }, ref) => {
     const videoRef = useRef<HTMLVideoElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [error, setError] = useState<string | null>(null);
@@ -21,16 +33,28 @@ const CameraFeed = forwardRef<CameraFeedRef, CameraFeedProps>(
     const [cameraReady, setCameraReady] = useState(false);
     const [isModelLoaded, setIsModelLoaded] = useState(false);
     const [detectionState, setDetectionState] = useState<'no_person' | 'too_close' | 'partial' | 'good'>('no_person');
-    const [coveragePercent, setCoveragePercent] = useState(0);
 
     const streamRef = useRef<MediaStream | null>(null);
     const landmarkerRef = useRef<unknown>(null);
     const rafRef = useRef<number>(0);
     const lastVideoTimeRef = useRef<number>(-1);
+    // Latest landmarks reference, updated on every detected frame.
+    const latestLandmarksRef = useRef<CapturedLandmark[] | null>(null);
+    const onDetectionUpdateRef = useRef(onDetectionUpdate);
+
+    useEffect(() => {
+      onDetectionUpdateRef.current = onDetectionUpdate;
+    }, [onDetectionUpdate]);
 
     useImperativeHandle(ref, () => ({
       videoElement: videoRef.current,
       canvasElement: canvasRef.current,
+      getLatestLandmarks: () => latestLandmarksRef.current,
+      getVideoSize: () => {
+        const v = videoRef.current;
+        if (!v || !v.videoWidth || !v.videoHeight) return null;
+        return { width: v.videoWidth, height: v.videoHeight };
+      },
     }), []);
 
     // Load model
@@ -41,7 +65,7 @@ const CameraFeed = forwardRef<CameraFeedRef, CameraFeedProps>(
         try {
           const { PoseLandmarker, FilesetResolver } = await import('@mediapipe/tasks-vision');
 
-          console.log('📦 Cargando modelo MediaPipe...');
+          console.log('[v0] Cargando modelo MediaPipe...');
           const vision = await FilesetResolver.forVisionTasks(
             'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm'
           );
@@ -50,7 +74,8 @@ const CameraFeed = forwardRef<CameraFeedRef, CameraFeedProps>(
             runningMode: 'VIDEO',
             numPoses: 1,
             baseOptions: {
-              modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',
+              modelAssetPath:
+                'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',
               delegate: 'GPU',
             },
             minPoseDetectionConfidence: 0.3,
@@ -61,10 +86,10 @@ const CameraFeed = forwardRef<CameraFeedRef, CameraFeedProps>(
           if (!cancelled) {
             landmarkerRef.current = landmarker;
             setIsModelLoaded(true);
-            console.log('✅ PoseLandmarker cargado');
+            console.log('[v0] PoseLandmarker cargado');
           }
         } catch (err) {
-          console.error('❌ Error cargando MediaPipe:', err);
+          console.error('[v0] Error cargando MediaPipe:', err);
         }
       }
 
@@ -83,13 +108,16 @@ const CameraFeed = forwardRef<CameraFeedRef, CameraFeedProps>(
       if (!video || !canvas) return;
 
       const landmarker = landmarkerRef.current as {
-        detectForVideo: (video: HTMLVideoElement, timestamp: number) => {
-          landmarks: { x: number; y: number; z: number; visibility: number }[][];
-          worldLandmarks: { x: number; y: number; z: number; visibility: number }[][];
+        detectForVideo: (
+          video: HTMLVideoElement,
+          timestamp: number
+        ) => {
+          landmarks: CapturedLandmark[][];
+          worldLandmarks: CapturedLandmark[][];
         };
       };
 
-      console.log('🎬 Iniciando loop de detección');
+      console.log('[v0] Iniciando loop de deteccion');
       setDetectionState('no_person');
 
       function drawLoop(timestamp: number) {
@@ -106,7 +134,6 @@ const CameraFeed = forwardRef<CameraFeedRef, CameraFeedProps>(
         if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
           canvas.width = video.videoWidth || 640;
           canvas.height = video.videoHeight || 480;
-          console.log('📐 Canvas sincronizado:', canvas.width, 'x', canvas.height);
         }
 
         if (video.currentTime !== lastVideoTimeRef.current) {
@@ -121,30 +148,40 @@ const CameraFeed = forwardRef<CameraFeedRef, CameraFeedProps>(
             if (results.landmarks && results.landmarks.length > 0) {
               const landmarks = results.landmarks[0];
 
-              // Draw skeleton
+              // Persist for the parent to grab on capture.
+              latestLandmarksRef.current = landmarks.map((l) => ({
+                x: l.x,
+                y: l.y,
+                z: l.z,
+                visibility: l.visibility ?? 0,
+              }));
+
               drawSkeleton(ctx, landmarks, canvas.width, canvas.height);
 
-              // Update detection state
-              const visible = landmarks.filter(l => (l.visibility ?? 0) > 0.5);
+              const visible = landmarks.filter((l) => (l.visibility ?? 0) > 0.5);
               const coverage = Math.round((visible.length / 33) * 100);
-              setCoveragePercent(coverage);
 
               const leftAnkle = landmarks[KEY_LANDMARKS.LEFT_ANKLE];
               const rightAnkle = landmarks[KEY_LANDMARKS.RIGHT_ANKLE];
               const nose = landmarks[KEY_LANDMARKS.NOSE];
 
+              let nextState: 'no_person' | 'too_close' | 'partial' | 'good';
               if ((leftAnkle?.visibility ?? 0) > 0.3 || (rightAnkle?.visibility ?? 0) > 0.3) {
-                setDetectionState(visible.length >= 20 ? 'good' : 'partial');
+                nextState = visible.length >= 20 ? 'good' : 'partial';
               } else if ((nose?.visibility ?? 0) > 0.5) {
-                setDetectionState('too_close');
+                nextState = 'too_close';
               } else if (visible.length >= 8) {
-                setDetectionState('partial');
+                nextState = 'partial';
               } else {
-                setDetectionState('no_person');
+                nextState = 'no_person';
               }
+
+              setDetectionState((prev) => (prev !== nextState ? nextState : prev));
+              onDetectionUpdateRef.current?.(nextState, coverage);
             } else {
-              setDetectionState('no_person');
-              setCoveragePercent(0);
+              latestLandmarksRef.current = null;
+              setDetectionState((prev) => (prev !== 'no_person' ? 'no_person' : prev));
+              onDetectionUpdateRef.current?.('no_person', 0);
             }
           }
         }
@@ -165,7 +202,7 @@ const CameraFeed = forwardRef<CameraFeedRef, CameraFeedProps>(
 
       async function startCamera() {
         try {
-          console.log('📷 Iniciando cámara...');
+          console.log('[v0] Iniciando camara...');
           const stream = await navigator.mediaDevices.getUserMedia({
             video: {
               width: { ideal: 1280 },
@@ -183,7 +220,12 @@ const CameraFeed = forwardRef<CameraFeedRef, CameraFeedProps>(
               if (mounted && videoRef.current && canvasRef.current) {
                 canvasRef.current.width = videoRef.current.videoWidth;
                 canvasRef.current.height = videoRef.current.videoHeight;
-                console.log('📐 Video listo:', videoRef.current.videoWidth, 'x', videoRef.current.videoHeight);
+                console.log(
+                  '[v0] Video listo:',
+                  videoRef.current.videoWidth,
+                  'x',
+                  videoRef.current.videoHeight
+                );
                 await videoRef.current.play();
                 setCameraReady(true);
               }
@@ -192,13 +234,13 @@ const CameraFeed = forwardRef<CameraFeedRef, CameraFeedProps>(
         } catch (err) {
           if (!mounted) return;
           const error = err as Error;
-          console.error('❌ Error cámara:', error.name, error.message);
+          console.error('[v0] Error camara:', error.name, error.message);
           if (error.name === 'NotAllowedError') {
-            setError('Permiso denegado. Permite el acceso a la cámara.');
+            setError('Permiso denegado. Permite el acceso a la camara.');
           } else if (error.name === 'NotFoundError') {
-            setError('No se encontró cámara.');
+            setError('No se encontro camara.');
           } else if (error.name === 'NotReadableError') {
-            setError('Cámara en uso por otra app.');
+            setError('Camara en uso por otra app.');
           } else {
             setError('Error: ' + error.message);
           }
@@ -222,7 +264,12 @@ const CameraFeed = forwardRef<CameraFeedRef, CameraFeedProps>(
       return (
         <div className={`flex flex-col items-center justify-center bg-slate-900 rounded-2xl ${className}`}>
           <svg className="w-12 h-12 text-rose-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={1.5}
+              d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+            />
           </svg>
           <p className="text-rose-400 text-sm text-center px-4">{error}</p>
         </div>
@@ -234,7 +281,7 @@ const CameraFeed = forwardRef<CameraFeedRef, CameraFeedProps>(
         {(isLoading || !cameraReady) && (
           <div className="absolute inset-0 flex flex-col items-center justify-center z-10">
             <div className="w-10 h-10 border-2 border-sky-500 border-t-transparent rounded-full animate-spin mb-3" />
-            <p className="text-slate-400 text-sm">Iniciando cámara...</p>
+            <p className="text-slate-400 text-sm">Iniciando camara...</p>
           </div>
         )}
 
@@ -265,6 +312,35 @@ const CameraFeed = forwardRef<CameraFeedRef, CameraFeedProps>(
             transform: 'scaleX(-1)',
           }}
         />
+
+        {/* Detection state badge */}
+        <div className="pointer-events-none absolute top-3 left-1/2 -translate-x-1/2 z-20">
+          <div
+            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-[11px] font-mono uppercase tracking-wider"
+            style={{
+              background: 'rgba(0,0,0,0.55)',
+              backdropFilter: 'blur(8px)',
+              border: '1px solid rgba(255,255,255,0.12)',
+              color: '#fff',
+            }}
+          >
+            <span
+              className={`w-2 h-2 rounded-full ${
+                detectionState === 'good'
+                  ? 'bg-emerald-400'
+                  : detectionState === 'partial'
+                  ? 'bg-amber-400'
+                  : detectionState === 'too_close'
+                  ? 'bg-orange-400'
+                  : 'bg-white/40'
+              }`}
+            />
+            {detectionState === 'good' && 'Postura correcta'}
+            {detectionState === 'partial' && 'Alejate un poco'}
+            {detectionState === 'too_close' && 'Demasiado cerca'}
+            {detectionState === 'no_person' && 'Buscando cuerpo...'}
+          </div>
+        </div>
       </div>
     );
   }
@@ -279,9 +355,18 @@ function drawSkeleton(
   height: number
 ) {
   const POSE_CONNECTIONS: [number, number][] = [
-    [11, 12], [11, 13], [13, 15], [12, 14], [14, 16],
-    [11, 23], [12, 24], [23, 24], [23, 25], [25, 27],
-    [24, 26], [26, 28],
+    [11, 12],
+    [11, 13],
+    [13, 15],
+    [12, 14],
+    [14, 16],
+    [11, 23],
+    [12, 24],
+    [23, 24],
+    [23, 25],
+    [25, 27],
+    [24, 26],
+    [26, 28],
   ];
 
   ctx.strokeStyle = '#00FF88';

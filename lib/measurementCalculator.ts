@@ -1,18 +1,23 @@
-import type { Landmark } from './types';
+/**
+ * Body measurement calculator from MediaPipe Pose landmarks.
+ *
+ * Strategy:
+ *  1. Compute a vertical scale factor (cm per pixel) using the user-declared
+ *     height and the visible vertical extent of the body in the frontal image,
+ *     correcting for the offset between the topmost detected facial landmark
+ *     and the actual top of the head, and between the lowest detected foot
+ *     landmark and the actual floor.
+ *  2. Derive widths and lengths from the front view in centimeters.
+ *  3. If a side view is available, derive depths (front-to-back distance) from
+ *     it and combine width + depth into ellipse-perimeter circumferences.
+ *     Otherwise, fall back to anthropometric ratios.
+ */
 
 export interface LandmarkWithVisibility {
   x: number;
   y: number;
   z: number;
   visibility: number;
-}
-
-export interface MeasurementInput {
-  frontLandmarks: LandmarkWithVisibility[];
-  sideLandmarks: LandmarkWithVisibility[];
-  heightCm: number;
-  imageWidth: number;
-  imageHeight: number;
 }
 
 export interface BodyMeasurementsResult {
@@ -31,30 +36,18 @@ export interface BodyMeasurementsResult {
   warnings: string[];
 }
 
-const LANDMARK_INDICES = {
+const LM = {
   NOSE: 0,
-  LEFT_EYE_INNER: 1,
   LEFT_EYE: 2,
-  LEFT_EYE_OUTER: 3,
-  RIGHT_EYE_INNER: 4,
   RIGHT_EYE: 5,
-  RIGHT_EYE_OUTER: 6,
   LEFT_EAR: 7,
   RIGHT_EAR: 8,
-  MOUTH_LEFT: 9,
-  MOUTH_RIGHT: 10,
   LEFT_SHOULDER: 11,
   RIGHT_SHOULDER: 12,
   LEFT_ELBOW: 13,
   RIGHT_ELBOW: 14,
   LEFT_WRIST: 15,
   RIGHT_WRIST: 16,
-  LEFT_PINKY: 17,
-  RIGHT_PINKY: 18,
-  LEFT_INDEX: 19,
-  RIGHT_INDEX: 20,
-  LEFT_THUMB: 21,
-  RIGHT_THUMB: 22,
   LEFT_HIP: 23,
   RIGHT_HIP: 24,
   LEFT_KNEE: 25,
@@ -67,65 +60,117 @@ const LANDMARK_INDICES = {
   RIGHT_FOOT_INDEX: 32,
 } as const;
 
-export function euclideanDistance(
-  p1: { x: number; y: number; z?: number },
-  p2: { x: number; y: number; z?: number }
-): number {
-  const dx = p1.x - p2.x;
-  const dy = p1.y - p2.y;
-  const dz = (p1.z || 0) - (p2.z || 0);
-  return Math.sqrt(dx * dx + dy * dy + dz * dz);
-}
+const MIN_VISIBILITY = 0.3;
 
-export function pixelDistance(
-  landmark1: { x: number; y: number },
-  landmark2: { x: number; y: number },
-  imageWidth: number,
-  imageHeight: number
-): number {
-  const dx = (landmark1.x - landmark2.x) * imageWidth;
-  const dy = (landmark1.y - landmark2.y) * imageHeight;
-  return Math.sqrt(dx * dx + dy * dy);
-}
-
-function getLandmark(landmarks: LandmarkWithVisibility[], index: number): LandmarkWithVisibility | null {
+function get(
+  landmarks: LandmarkWithVisibility[],
+  index: number,
+  minVisibility = MIN_VISIBILITY
+): LandmarkWithVisibility | null {
   const lm = landmarks[index];
-  if (!lm || lm.visibility < 0.3) return null;
+  if (!lm) return null;
+  if ((lm.visibility ?? 0) < minVisibility) return null;
   return lm;
 }
 
-function averageVisibility(landmarks: (LandmarkWithVisibility | null)[]): number {
-  const valid = landmarks.filter((l): l is LandmarkWithVisibility => l !== null);
-  if (valid.length === 0) return 0;
-  return valid.reduce((sum, l) => sum + l.visibility, 0) / valid.length;
-}
-
-function calculateScaleFactor(
-  frontLandmarks: LandmarkWithVisibility[],
-  heightCm: number,
+function pixelDistance(
+  a: { x: number; y: number },
+  b: { x: number; y: number },
   imageWidth: number,
   imageHeight: number
+): number {
+  const dx = (a.x - b.x) * imageWidth;
+  const dy = (a.y - b.y) * imageHeight;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+/**
+ * Returns the perimeter of an ellipse with given full-width and full-depth
+ * using Ramanujan's first approximation. Inputs are diameters; the formula
+ * uses semi-axes a = width / 2, b = depth / 2.
+ */
+function ellipsePerimeter(width: number, depth: number): number {
+  if (width <= 0 || depth <= 0) return 0;
+  const a = width / 2;
+  const b = depth / 2;
+  return Math.PI * (3 * (a + b) - Math.sqrt((3 * a + b) * (a + 3 * b)));
+}
+
+/**
+ * Estimate the cm-per-pixel scale factor along the vertical axis using the
+ * user's declared height. We pick the topmost visible head landmark and the
+ * lowest visible foot landmark, and account for the small offsets between
+ * those landmarks and the true top of the head / floor.
+ *
+ * The offsets are expressed as a fraction of total body height.
+ */
+function computeVerticalScaleFactor(
+  landmarks: LandmarkWithVisibility[],
+  heightCm: number,
+  imageHeight: number
+): { scaleFactor: number; visibleRatio: number } | null {
+  const headCandidates: { lm: LandmarkWithVisibility | null; offset: number }[] = [
+    { lm: get(landmarks, LM.LEFT_EAR), offset: 0.06 },
+    { lm: get(landmarks, LM.RIGHT_EAR), offset: 0.06 },
+    { lm: get(landmarks, LM.LEFT_EYE), offset: 0.07 },
+    { lm: get(landmarks, LM.RIGHT_EYE), offset: 0.07 },
+    { lm: get(landmarks, LM.NOSE), offset: 0.1 },
+  ].filter((c) => c.lm !== null) as { lm: LandmarkWithVisibility; offset: number }[];
+
+  const footCandidates: { lm: LandmarkWithVisibility | null; offset: number }[] = [
+    { lm: get(landmarks, LM.LEFT_FOOT_INDEX), offset: 0 },
+    { lm: get(landmarks, LM.RIGHT_FOOT_INDEX), offset: 0 },
+    { lm: get(landmarks, LM.LEFT_HEEL), offset: 0.02 },
+    { lm: get(landmarks, LM.RIGHT_HEEL), offset: 0.02 },
+    { lm: get(landmarks, LM.LEFT_ANKLE), offset: 0.04 },
+    { lm: get(landmarks, LM.RIGHT_ANKLE), offset: 0.04 },
+  ].filter((c) => c.lm !== null) as { lm: LandmarkWithVisibility; offset: number }[];
+
+  if (headCandidates.length === 0 || footCandidates.length === 0) return null;
+
+  // Topmost head landmark = smallest y (origin at top of frame).
+  const head = headCandidates.reduce((acc, cur) => (cur.lm.y < acc.lm.y ? cur : acc));
+  // Lowest foot landmark = largest y.
+  const foot = footCandidates.reduce((acc, cur) => (cur.lm.y > acc.lm.y ? cur : acc));
+
+  const visibleNormalized = foot.lm.y - head.lm.y; // 0..1 of frame height
+  if (visibleNormalized <= 0.05) return null;
+
+  const visiblePixels = visibleNormalized * imageHeight;
+  const visibleRatio = Math.max(0.7, 1 - head.offset - foot.offset);
+  const totalPixelHeight = visiblePixels / visibleRatio;
+  const scaleFactor = heightCm / totalPixelHeight;
+
+  return { scaleFactor, visibleRatio };
+}
+
+function avgVisibility(landmarks: (LandmarkWithVisibility | null)[]): number {
+  const valid = landmarks.filter((l): l is LandmarkWithVisibility => l !== null);
+  if (valid.length === 0) return 0;
+  return valid.reduce((sum, l) => sum + (l.visibility ?? 0), 0) / valid.length;
+}
+
+/**
+ * Estimate horizontal depth between left/right shoulders (or hips) when seen
+ * from a side view. In a true profile view, both sides project onto the same
+ * image plane, and the horizontal distance between them approximates the
+ * front-to-back depth of the body at that level.
+ */
+function depthFromSide(
+  sideLandmarks: LandmarkWithVisibility[] | null,
+  leftIdx: number,
+  rightIdx: number,
+  scaleFactor: number,
+  imageWidth: number
 ): number | null {
-  const nose = getLandmark(frontLandmarks, LANDMARK_INDICES.NOSE);
-  const leftAnkle = getLandmark(frontLandmarks, LANDMARK_INDICES.LEFT_ANKLE);
-  const rightAnkle = getLandmark(frontLandmarks, LANDMARK_INDICES.RIGHT_ANKLE);
-
-  if (!nose || (!leftAnkle && !rightAnkle)) return null;
-
-  const ankleY = leftAnkle ? leftAnkle.y : rightAnkle!.y;
-  const ankleX = leftAnkle ? leftAnkle.x : rightAnkle!.x;
-
-  const nosePixel = { x: nose.x * imageWidth, y: nose.y * imageHeight };
-  const anklePixel = { x: ankleX * imageWidth, y: ankleY * imageHeight };
-
-  const bodyPixelHeight = euclideanDistance(
-    { x: nosePixel.x / imageWidth, y: nosePixel.y / imageHeight },
-    { x: anklePixel.x / imageWidth, y: anklePixel.y / imageHeight }
-  ) * imageHeight;
-
-  const scaleFactor = heightCm / (bodyPixelHeight * 0.92);
-
-  return scaleFactor;
+  if (!sideLandmarks || sideLandmarks.length === 0) return null;
+  const left = get(sideLandmarks, leftIdx, 0.2);
+  const right = get(sideLandmarks, rightIdx, 0.2);
+  if (!left || !right) return null;
+  const px = Math.abs(left.x - right.x) * imageWidth;
+  // Heuristic correction: in pure profile, only one side is sharply
+  // visible; the other has lower confidence and slightly compressed x.
+  return px * scaleFactor * 1.05;
 }
 
 export function calculateMeasurements(
@@ -137,157 +182,213 @@ export function calculateMeasurements(
 ): BodyMeasurementsResult {
   const warnings: string[] = [];
 
-  const scaleFactor = calculateScaleFactor(frontLandmarks, heightCm, imageWidth, imageHeight);
-  if (!scaleFactor) {
-    return {
-      measurements: {
-        shoulders: 0,
-        chest: 0,
-        waist: 0,
-        hips: 0,
-        inseam: 0,
-        armLength: 0,
-        torsoLength: 0,
-        capturedAt: new Date(),
-        confidence: 0,
-        isEstimated: true,
-      },
-      warnings: ['No se pudieron detectar los puntos necesarios para calcular medidas'],
-    };
+  if (!frontLandmarks || frontLandmarks.length === 0) {
+    return emptyResult([
+      'No se detectaron landmarks en la pose frontal. Asegurate de que tu cuerpo entero sea visible.',
+    ]);
   }
 
-  const leftShoulder = getLandmark(frontLandmarks, LANDMARK_INDICES.LEFT_SHOULDER);
-  const rightShoulder = getLandmark(frontLandmarks, LANDMARK_INDICES.RIGHT_SHOULDER);
-  const leftHip = getLandmark(frontLandmarks, LANDMARK_INDICES.LEFT_HIP);
-  const rightHip = getLandmark(frontLandmarks, LANDMARK_INDICES.RIGHT_HIP);
-  const leftKnee = getLandmark(frontLandmarks, LANDMARK_INDICES.LEFT_KNEE);
-  const rightKnee = getLandmark(frontLandmarks, LANDMARK_INDICES.RIGHT_KNEE);
-  const leftAnkle = getLandmark(frontLandmarks, LANDMARK_INDICES.LEFT_ANKLE);
-  const rightAnkle = getLandmark(frontLandmarks, LANDMARK_INDICES.RIGHT_ANKLE);
-  const leftWrist = getLandmark(frontLandmarks, LANDMARK_INDICES.LEFT_WRIST);
-  const rightWrist = getLandmark(frontLandmarks, LANDMARK_INDICES.RIGHT_WRIST);
-  const leftElbow = getLandmark(frontLandmarks, LANDMARK_INDICES.LEFT_ELBOW);
-  const rightElbow = getLandmark(frontLandmarks, LANDMARK_INDICES.RIGHT_ELBOW);
-  const nose = getLandmark(frontLandmarks, LANDMARK_INDICES.NOSE);
+  const scale = computeVerticalScaleFactor(frontLandmarks, heightCm, imageHeight);
+  if (!scale) {
+    return emptyResult([
+      'No se pudo calibrar la escala. Asegurate de que la cabeza y los pies sean visibles en la pose frontal.',
+    ]);
+  }
+  const { scaleFactor } = scale;
 
-  let shouldersWidth = 0;
-  if (leftShoulder && rightShoulder) {
-    const rawShoulders = pixelDistance(leftShoulder, rightShoulder, imageWidth, imageHeight);
-    shouldersWidth = rawShoulders * scaleFactor * 1.15;
+  const lShoulder = get(frontLandmarks, LM.LEFT_SHOULDER);
+  const rShoulder = get(frontLandmarks, LM.RIGHT_SHOULDER);
+  const lHip = get(frontLandmarks, LM.LEFT_HIP);
+  const rHip = get(frontLandmarks, LM.RIGHT_HIP);
+  const lKnee = get(frontLandmarks, LM.LEFT_KNEE);
+  const rKnee = get(frontLandmarks, LM.RIGHT_KNEE);
+  const lAnkle = get(frontLandmarks, LM.LEFT_ANKLE);
+  const rAnkle = get(frontLandmarks, LM.RIGHT_ANKLE);
+  const lElbow = get(frontLandmarks, LM.LEFT_ELBOW);
+  const rElbow = get(frontLandmarks, LM.RIGHT_ELBOW);
+  const lWrist = get(frontLandmarks, LM.LEFT_WRIST);
+  const rWrist = get(frontLandmarks, LM.RIGHT_WRIST);
+
+  // ---- Width measurements (front view) ----
+  // Shoulders: bone-to-bone landmark distance is slightly narrower than the
+  // actual shoulder breadth (acromion-to-acromion); 1.12 brings it closer.
+  let shoulderWidthCm = 0;
+  if (lShoulder && rShoulder) {
+    const px = pixelDistance(lShoulder, rShoulder, imageWidth, imageHeight);
+    shoulderWidthCm = px * scaleFactor * 1.12;
   }
 
-  let hipsWidth = 0;
-  if (leftHip && rightHip) {
-    const rawHips = pixelDistance(leftHip, rightHip, imageWidth, imageHeight);
-    hipsWidth = rawHips * scaleFactor * 1.1;
+  // Hip width: landmarks are at the joint, slightly inside the actual outer
+  // hip line; 1.1 compensates.
+  let hipWidthCm = 0;
+  if (lHip && rHip) {
+    const px = pixelDistance(lHip, rHip, imageWidth, imageHeight);
+    hipWidthCm = px * scaleFactor * 1.1;
   }
 
-  let torsoLength = 0;
-  if (leftShoulder && rightShoulder && leftHip && rightHip) {
-    const shoulderMidY = (leftShoulder.y + rightShoulder.y) / 2;
-    const hipMidY = (leftHip.y + rightHip.y) / 2;
-    torsoLength = Math.abs(hipMidY - shoulderMidY) * imageHeight * scaleFactor;
+  // Chest width is wider than the shoulder-joint distance (ribcage spreads
+  // out); use a small expansion of shoulder width.
+  const chestWidthCm = shoulderWidthCm > 0 ? shoulderWidthCm * 0.95 : 0;
+  // Natural waist width sits roughly between shoulder and hip width; with
+  // average proportion it is ~0.78 of hip width.
+  const waistWidthCm = hipWidthCm > 0 ? hipWidthCm * 0.82 : 0;
+
+  // ---- Lengths ----
+  // Torso length: midpoint of shoulders to midpoint of hips.
+  let torsoLengthCm = 0;
+  if (lShoulder && rShoulder && lHip && rHip) {
+    const shoulderMidY = (lShoulder.y + rShoulder.y) / 2;
+    const hipMidY = (lHip.y + rHip.y) / 2;
+    torsoLengthCm = Math.abs(hipMidY - shoulderMidY) * imageHeight * scaleFactor;
   }
 
-  let inseam = 0;
-  if (leftHip && leftKnee && leftAnkle) {
-    const hipMidX = leftHip.x;
-    const kneeY = leftKnee.y;
-    const ankleY = leftAnkle.y;
-    inseam = Math.abs(ankleY - kneeY) * imageHeight * scaleFactor;
+  // Inseam: hip joint to ankle, vertical distance (the side of the leg).
+  // This is the canonical garment measurement, NOT knee-to-ankle.
+  let inseamCm = 0;
+  {
+    const hip = lHip ?? rHip;
+    const ankle = lAnkle ?? rAnkle;
+    if (hip && ankle) {
+      inseamCm = Math.abs(ankle.y - hip.y) * imageHeight * scaleFactor;
+      // Small inward offset: actual inseam starts at the crotch which is
+      // ~3 cm below the hip joint landmark.
+      inseamCm = Math.max(0, inseamCm - 3);
+    }
   }
 
-  let leftArmLength = 0;
-  let rightArmLength = 0;
-  if (leftShoulder && leftElbow && leftWrist) {
-    const upperArm = pixelDistance(leftShoulder, leftElbow, imageWidth, imageHeight);
-    const lowerArm = pixelDistance(leftElbow, leftWrist, imageWidth, imageHeight);
-    leftArmLength = (upperArm + lowerArm) * scaleFactor;
+  // Arm length: shoulder -> elbow -> wrist (sum of segments). Average sides.
+  function armLen(
+    s: LandmarkWithVisibility | null,
+    e: LandmarkWithVisibility | null,
+    w: LandmarkWithVisibility | null
+  ): number {
+    if (!s || !e || !w) return 0;
+    const upper = pixelDistance(s, e, imageWidth, imageHeight);
+    const lower = pixelDistance(e, w, imageWidth, imageHeight);
+    return (upper + lower) * scaleFactor;
   }
-  if (rightShoulder && rightElbow && rightWrist) {
-    const upperArm = pixelDistance(rightShoulder, rightElbow, imageWidth, imageHeight);
-    const lowerArm = pixelDistance(rightElbow, rightWrist, imageWidth, imageHeight);
-    rightArmLength = (upperArm + lowerArm) * scaleFactor;
+  const leftArm = armLen(lShoulder, lElbow, lWrist);
+  const rightArm = armLen(rShoulder, rElbow, rWrist);
+  const armSamples = [leftArm, rightArm].filter((v) => v > 0);
+  const armLengthCm =
+    armSamples.length > 0 ? armSamples.reduce((a, b) => a + b, 0) / armSamples.length : 0;
+
+  // ---- Depths from side view (optional) ----
+  const shoulderDepthCm = depthFromSide(
+    sideLandmarks,
+    LM.LEFT_SHOULDER,
+    LM.RIGHT_SHOULDER,
+    scaleFactor,
+    imageWidth
+  );
+  const hipDepthCm = depthFromSide(sideLandmarks, LM.LEFT_HIP, LM.RIGHT_HIP, scaleFactor, imageWidth);
+
+  const hasSideDepth = shoulderDepthCm !== null && hipDepthCm !== null;
+
+  // ---- Circumferences ----
+  // Chest: ellipse(chestWidth, chestDepth) where chestDepth ≈ shoulder depth.
+  // Hips: ellipse(hipWidth, hipDepth).
+  // Waist: ellipse interpolation between chest and hip.
+  let chestCircumCm = 0;
+  let waistCircumCm = 0;
+  let hipCircumCm = 0;
+
+  if (hasSideDepth && shoulderDepthCm! > 0 && hipDepthCm! > 0) {
+    const chestDepth = shoulderDepthCm!; // chest depth ~= shoulder depth
+    const waistDepth = (shoulderDepthCm! + hipDepthCm!) / 2 * 0.88;
+    chestCircumCm = ellipsePerimeter(chestWidthCm, chestDepth);
+    waistCircumCm = ellipsePerimeter(waistWidthCm, waistDepth);
+    hipCircumCm = ellipsePerimeter(hipWidthCm, hipDepthCm!);
+  } else {
+    // Fallback: anthropometric ratio constants from front-only widths.
+    // These correspond roughly to a circular-but-not-circular cross section
+    // typical of adults of average build.
+    chestCircumCm = chestWidthCm > 0 ? chestWidthCm * 2.85 : 0;
+    waistCircumCm = waistWidthCm > 0 ? waistWidthCm * 2.95 : 0;
+    hipCircumCm = hipWidthCm > 0 ? hipWidthCm * 3.05 : 0;
+    if (sideLandmarks && sideLandmarks.length > 0) {
+      warnings.push('La vista lateral no fue clara, las circunferencias son estimaciones.');
+    } else {
+      warnings.push('Sin vista lateral. Las circunferencias se estimaron por proporciones.');
+    }
   }
-  const armLength = (leftArmLength + rightArmLength) / 2 || 0;
 
-  let chestDepth = 0;
-  let waistDepth = 0;
-  let hipDepth = 0;
-  const sideNose = sideLandmarks[LANDMARK_INDICES.NOSE];
-  const sideLeftShoulder = getLandmark(sideLandmarks, LANDMARK_INDICES.LEFT_SHOULDER);
-  const sideRightShoulder = getLandmark(sideLandmarks, LANDMARK_INDICES.RIGHT_SHOULDER);
-  const sideLeftHip = getLandmark(sideLandmarks, LANDMARK_INDICES.LEFT_HIP);
-  const sideRightHip = getLandmark(sideLandmarks, LANDMARK_INDICES.RIGHT_HIP);
-  const sideLeftKnee = getLandmark(sideLandmarks, LANDMARK_INDICES.LEFT_KNEE);
-  const sideRightKnee = getLandmark(sideLandmarks, LANDMARK_INDICES.RIGHT_KNEE);
-
-  if (sideNose && sideLeftShoulder && sideRightShoulder) {
-    const sideShoulderMidX = (sideLeftShoulder.x + sideRightShoulder.x) / 2;
-    chestDepth = Math.abs(sideNose.x - sideShoulderMidX) * imageWidth * scaleFactor * 2.2;
-  }
-
-  if (sideLeftHip && sideRightHip && sideLeftKnee && sideRightKnee) {
-    const sideHipMidX = (sideLeftHip.x + sideRightHip.x) / 2;
-    const sideKneeMidX = (sideLeftKnee.x + sideRightKnee.x) / 2;
-    hipDepth = Math.abs(sideHipMidX - sideKneeMidX) * imageWidth * scaleFactor * 1.8;
-  }
-
-  const chest = shouldersWidth > 0 ? shouldersWidth * 3.1 : 0;
-  const waist = hipsWidth > 0 ? hipsWidth * 2.7 : 0;
-  const hips = hipsWidth > 0 ? hipsWidth * 3.3 : 0;
-
-  const usedLandmarks = [
-    leftShoulder, rightShoulder, leftHip, rightHip,
-    leftKnee, leftAnkle, nose,
-  ];
-  const avgVisibility = averageVisibility(usedLandmarks);
-
-  let confidence = avgVisibility;
+  // ---- Confidence ----
+  const usedFront = [lShoulder, rShoulder, lHip, rHip, lAnkle ?? rAnkle];
+  let confidence = avgVisibility(usedFront);
+  const frontCount = usedFront.filter((l) => l !== null).length;
   let isEstimated = false;
 
-  const frontLandmarkCount = [leftShoulder, rightShoulder, leftHip, rightHip, nose, leftAnkle]
-    .filter(l => l !== null).length;
-
-  if (frontLandmarkCount < 5) {
+  if (frontCount < 4) {
     confidence *= 0.7;
     isEstimated = true;
-    warnings.push('Algunas medidas son estimaciones basadas en proporciones corporales tipicas');
+    warnings.push('Algunas medidas se estimaron porque faltaban landmarks clave en la vista frontal.');
   }
 
-  if (chestDepth > 0) {
-    confidence = Math.min(confidence + 0.1, 1);
+  if (hasSideDepth) {
+    confidence = Math.min(1, confidence + 0.1);
   } else {
     confidence *= 0.85;
-    warnings.push('Falta la vista lateral para calcular profundidad de pecho y cadera');
   }
 
-  const shoulderRange = { min: heightCm * 0.18, max: heightCm * 0.28 };
-  if (shouldersWidth < shoulderRange.min || shouldersWidth > shoulderRange.max) {
-    warnings.push(`Anchura de hombros (${Math.round(shouldersWidth)}cm) esta fuera del rango esperado para esta altura`);
-    confidence *= 0.8;
+  // Sanity range checks against declared height.
+  if (shoulderWidthCm > 0 && (shoulderWidthCm < heightCm * 0.18 || shoulderWidthCm > heightCm * 0.3)) {
+    warnings.push(
+      `El ancho de hombros (${Math.round(shoulderWidthCm)} cm) esta fuera del rango esperado.`
+    );
+    confidence *= 0.85;
   }
-
-  const waistRange = { min: heightCm * 0.12, max: heightCm * 0.20 };
-  if (waist < waistRange.min || waist > waistRange.max) {
-    warnings.push(`Cintura (${Math.round(waist)}cm) esta fuera del rango esperado para esta altura`);
-    confidence *= 0.8;
+  if (waistCircumCm > 0 && (waistCircumCm < heightCm * 0.35 || waistCircumCm > heightCm * 0.7)) {
+    warnings.push(`La cintura (${Math.round(waistCircumCm)} cm) esta fuera del rango esperado.`);
+    confidence *= 0.85;
   }
 
   confidence = Math.max(0, Math.min(1, confidence));
 
+  console.log('[v0] Mediciones calculadas', {
+    scaleFactor,
+    shoulderWidthCm,
+    hipWidthCm,
+    chestCircumCm,
+    waistCircumCm,
+    hipCircumCm,
+    inseamCm,
+    armLengthCm,
+    torsoLengthCm,
+    hasSideDepth,
+    confidence,
+  });
+
   return {
     measurements: {
-      shoulders: Math.round(shouldersWidth),
-      chest: Math.round(chest),
-      waist: Math.round(waist),
-      hips: Math.round(hips),
-      inseam: Math.round(inseam),
-      armLength: Math.round(armLength),
-      torsoLength: Math.round(torsoLength),
+      shoulders: Math.round(shoulderWidthCm),
+      chest: Math.round(chestCircumCm),
+      waist: Math.round(waistCircumCm),
+      hips: Math.round(hipCircumCm),
+      inseam: Math.round(inseamCm),
+      armLength: Math.round(armLengthCm),
+      torsoLength: Math.round(torsoLengthCm),
       capturedAt: new Date(),
       confidence: Math.round(confidence * 100) / 100,
       isEstimated,
+    },
+    warnings,
+  };
+}
+
+function emptyResult(warnings: string[]): BodyMeasurementsResult {
+  return {
+    measurements: {
+      shoulders: 0,
+      chest: 0,
+      waist: 0,
+      hips: 0,
+      inseam: 0,
+      armLength: 0,
+      torsoLength: 0,
+      capturedAt: new Date(),
+      confidence: 0,
+      isEstimated: true,
     },
     warnings,
   };

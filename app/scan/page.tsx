@@ -3,20 +3,17 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { v4 as uuidv4 } from 'uuid';
-import CameraFeed, { type CameraFeedRef } from '@/components/camera/CameraFeed';
+import CameraFeed, { type CameraFeedRef, type CapturedLandmark } from '@/components/camera/CameraFeed';
 import Navbar from '@/components/layout/Navbar';
 import { useAppStore } from '@/store/useAppStore';
 import { POSES } from '@/lib/constants';
 import { savePose, clearAllPoses, saveProfile, saveMeasurements } from '@/lib/storage';
 import { calculateMeasurements } from '@/lib/measurementCalculator';
 import { validateMeasurements } from '@/lib/anatomicalValidation';
-import type { CapturedPose, BodyMeasurements } from '@/lib/types';
+import type { CapturedPose } from '@/lib/types';
 
 const POSE_STEPS = ['front', 'side', 'back'] as const;
 type PoseType = typeof POSE_STEPS[number];
-
-const IMAGE_WIDTH = 720;
-const IMAGE_HEIGHT = 1280;
 
 export default function ScanPage() {
   const router = useRouter();
@@ -31,18 +28,31 @@ export default function ScanPage() {
     side: null,
     back: null,
   });
-  const [capturedLandmarks, setCapturedLandmarks] = useState<Record<PoseType, unknown[]>>({
+  const [capturedLandmarks, setCapturedLandmarks] = useState<Record<PoseType, CapturedLandmark[]>>({
     front: [],
     side: [],
     back: [],
   });
+  const [capturedSizes, setCapturedSizes] = useState<Record<PoseType, { width: number; height: number } | null>>({
+    front: null,
+    side: null,
+    back: null,
+  });
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [analysisResult, setAnalysisResult] = useState<{
-    measurements: BodyMeasurements;
-    warnings: string[];
-  } | null>(null);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [liveDetection, setLiveDetection] = useState<{
+    state: 'no_person' | 'too_close' | 'partial' | 'good';
+    coverage: number;
+  }>({ state: 'no_person', coverage: 0 });
 
   const { setUserProfile, addCapturedPose, clearPoses, userProfile } = useAppStore();
+
+  const handleDetectionUpdate = useCallback(
+    (state: 'no_person' | 'too_close' | 'partial' | 'good', coverage: number) => {
+      setLiveDetection({ state, coverage });
+    },
+    []
+  );
 
   const currentPose = POSES.find((p) => p.id === POSE_STEPS[currentPoseIndex]) || POSES[0];
   const capturedCount = Object.values(capturedImages).filter(Boolean).length;
@@ -59,35 +69,62 @@ export default function ScanPage() {
   const handleCapture = useCallback(() => {
     const poseId = POSE_STEPS[currentPoseIndex];
     const video = cameraRef.current?.videoElement;
+    if (!video) return;
 
-    if (video) {
-      const tempCanvas = document.createElement('canvas');
-      tempCanvas.width = video.videoWidth;
-      tempCanvas.height = video.videoHeight;
-      const tempCtx = tempCanvas.getContext('2d');
-      if (tempCtx) {
-        tempCtx.scale(-1, 1);
-        tempCtx.drawImage(video, 0, 0, -tempCanvas.width, tempCanvas.height);
-        const dataUrl = tempCanvas.toDataURL('image/jpeg', 0.9);
+    // Snapshot the latest landmarks BEFORE drawing, so we have the exact pose
+    // at the moment of capture.
+    const latestLandmarks = cameraRef.current?.getLatestLandmarks() ?? null;
+    const videoSize = cameraRef.current?.getVideoSize() ?? {
+      width: video.videoWidth,
+      height: video.videoHeight,
+    };
 
-        setCapturedImages((prev) => ({ ...prev, [poseId]: dataUrl }));
-
-        const pose: CapturedPose = {
-          poseId,
-          imageDataUrl: dataUrl,
-          capturedAt: new Date(),
-          landmarks: [],
-        };
-
-        savePose(pose).catch(console.error);
-        addCapturedPose(pose);
-      }
+    if (!latestLandmarks || latestLandmarks.length === 0) {
+      console.warn('[v0] Captura sin landmarks: el detector aun no encuentra el cuerpo.');
+    } else {
+      console.log(
+        '[v0] Captura',
+        poseId,
+        'con',
+        latestLandmarks.length,
+        'landmarks. Video',
+        videoSize.width,
+        'x',
+        videoSize.height
+      );
     }
+
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = videoSize.width;
+    tempCanvas.height = videoSize.height;
+    const tempCtx = tempCanvas.getContext('2d');
+    if (!tempCtx) return;
+
+    tempCtx.scale(-1, 1);
+    tempCtx.drawImage(video, 0, 0, -tempCanvas.width, tempCanvas.height);
+    const dataUrl = tempCanvas.toDataURL('image/jpeg', 0.9);
+
+    const landmarks = latestLandmarks ?? [];
+
+    setCapturedImages((prev) => ({ ...prev, [poseId]: dataUrl }));
+    setCapturedLandmarks((prev) => ({ ...prev, [poseId]: landmarks }));
+    setCapturedSizes((prev) => ({ ...prev, [poseId]: videoSize }));
+
+    const pose: CapturedPose = {
+      poseId,
+      imageDataUrl: dataUrl,
+      capturedAt: new Date(),
+      landmarks,
+    };
+
+    savePose(pose).catch(console.error);
+    addCapturedPose(pose);
   }, [currentPoseIndex, addCapturedPose]);
 
   const handleRetake = useCallback((poseId: PoseType) => {
     setCapturedImages((prev) => ({ ...prev, [poseId]: null }));
     setCapturedLandmarks((prev) => ({ ...prev, [poseId]: [] }));
+    setCapturedSizes((prev) => ({ ...prev, [poseId]: null }));
   }, []);
 
   const handleNextPose = useCallback(() => {
@@ -116,52 +153,66 @@ export default function ScanPage() {
   };
 
   const handleAnalyze = useCallback(async () => {
+    setAnalysisError(null);
     setIsAnalyzing(true);
 
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-
-    if (userProfile && capturedLandmarks.front.length > 0) {
-      const frontLandmarks = capturedLandmarks.front.map((l: any) => ({
-        x: l.x,
-        y: l.y,
-        z: l.z,
-        visibility: l.visibility,
-      }));
-
-      const sideLandmarks = capturedLandmarks.side.length > 0
-        ? capturedLandmarks.side.map((l: any) => ({
-            x: l.x,
-            y: l.y,
-            z: l.z,
-            visibility: l.visibility,
-          }))
-        : [];
-
-      const result = calculateMeasurements(
-        frontLandmarks,
-        sideLandmarks,
-        userProfile.height,
-        IMAGE_WIDTH,
-        IMAGE_HEIGHT
-      );
-
-      const validation = validateMeasurements(result.measurements, userProfile.height);
-
-      if (validation.valid) {
-        const finalMeasurements = result.measurements;
-        setUserProfile({ ...userProfile, measurements: finalMeasurements });
-        saveMeasurements(finalMeasurements).catch(console.error);
-      }
-
-      setAnalysisResult({
-        measurements: result.measurements,
-        warnings: validation.warnings,
-      });
+    if (!userProfile) {
+      setAnalysisError('No se ha registrado tu altura. Vuelve a comenzar.');
+      setIsAnalyzing(false);
+      return;
     }
+
+    if (capturedLandmarks.front.length === 0) {
+      setAnalysisError(
+        'No se detectaron puntos corporales en la pose frontal. Repite la captura asegurandote de que tu cuerpo entero sea visible.'
+      );
+      setIsAnalyzing(false);
+      return;
+    }
+
+    // Use the same image size that MediaPipe used to normalize the landmarks.
+    const frontSize = capturedSizes.front ?? { width: 1280, height: 720 };
+    const sideSize = capturedSizes.side ?? frontSize;
+
+    // The pixel scale on the frontal image matters for vertical and horizontal
+    // distances; the side image uses its own width for depth measurements,
+    // but since both are roughly the same camera, we pass the same dims and
+    // recompute scale per-view inside the calculator.
+    const result = calculateMeasurements(
+      capturedLandmarks.front,
+      capturedLandmarks.side,
+      userProfile.height,
+      Math.max(frontSize.width, sideSize.width),
+      Math.max(frontSize.height, sideSize.height)
+    );
+
+    // Brief delay so the spinner is visible.
+    await new Promise((resolve) => setTimeout(resolve, 600));
+
+    if (result.measurements.shoulders === 0 && result.measurements.hips === 0) {
+      setAnalysisError(
+        result.warnings.join(' ') ||
+          'No se pudieron calcular medidas. Repite el escaneo asegurandote de que la cabeza y los pies sean visibles.'
+      );
+      setIsAnalyzing(false);
+      return;
+    }
+
+    const validation = validateMeasurements(result.measurements, userProfile.height);
+    const finalMeasurements = result.measurements;
+
+    setUserProfile({ ...userProfile, measurements: finalMeasurements });
+    saveMeasurements(finalMeasurements).catch(console.error);
+
+    console.log('[v0] Analisis completado', {
+      measurements: finalMeasurements,
+      warnings: [...result.warnings, ...validation.warnings],
+      valid: validation.valid,
+    });
 
     setIsAnalyzing(false);
     router.push('/profile');
-  }, [capturedLandmarks, userProfile, setUserProfile, router]);
+  }, [capturedLandmarks, capturedSizes, userProfile, setUserProfile, router]);
 
   // ---------- HEIGHT ENTRY ----------
   if (!heightEntered) {
@@ -328,9 +379,42 @@ export default function ScanPage() {
               })}
             </div>
 
+            {analysisError && (
+              <div
+                className="mb-4 p-4 rounded-2xl text-[13px] text-amber-200/90 leading-relaxed"
+                style={{
+                  background: 'rgba(245,158,11,0.08)',
+                  border: '1px solid rgba(245,158,11,0.25)',
+                }}
+              >
+                <div className="flex gap-3 items-start">
+                  <svg
+                    className="w-4 h-4 mt-0.5 flex-shrink-0"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                    />
+                  </svg>
+                  <span>{analysisError}</span>
+                </div>
+              </div>
+            )}
+
             <div className="flex flex-col sm:flex-row gap-3">
               <button
-                onClick={() => setCapturedImages({ front: null, side: null, back: null })}
+                onClick={() => {
+                  setCapturedImages({ front: null, side: null, back: null });
+                  setCapturedLandmarks({ front: [], side: [], back: [] });
+                  setCapturedSizes({ front: null, side: null, back: null });
+                  setAnalysisError(null);
+                  setCurrentPoseIndex(0);
+                }}
                 className="flex-1 inline-flex items-center justify-center gap-2 px-6 py-3.5 border border-white/15 text-white font-medium rounded-full hover:bg-white/5 transition-colors"
               >
                 Repetir todo
@@ -395,7 +479,11 @@ export default function ScanPage() {
             className="relative w-full aspect-[3/4] rounded-2xl overflow-hidden mb-6"
             style={{ border: '1px solid rgba(255,255,255,0.1)' }}
           >
-            <CameraFeed ref={cameraRef} className="w-full h-full" />
+            <CameraFeed
+              ref={cameraRef}
+              className="w-full h-full"
+              onDetectionUpdate={handleDetectionUpdate}
+            />
 
             {/* Captured overlay */}
             {capturedImages[currentPose.id] && (
@@ -417,46 +505,83 @@ export default function ScanPage() {
 
           {/* Capture button row */}
           <div className="flex flex-col items-center gap-3 mb-6">
-            <button
-              onClick={handleCapture}
-              disabled={!!capturedImages[currentPose.id]}
-              aria-label="Capturar pose"
-              className={`relative w-20 h-20 rounded-full flex items-center justify-center transition-all duration-200 ${
-                !capturedImages[currentPose.id]
-                  ? 'bg-white hover:scale-105 active:scale-95 cursor-pointer'
-                  : 'bg-white/10 cursor-not-allowed'
-              }`}
-              style={{
-                boxShadow: !capturedImages[currentPose.id]
-                  ? '0 0 0 4px rgba(255,255,255,0.15), 0 0 0 1px rgba(255,255,255,0.3)'
-                  : '0 0 0 1px rgba(255,255,255,0.1)',
-              }}
-            >
-              {capturedImages[currentPose.id] ? (
-                <svg className="w-7 h-7 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
-              ) : (
-                <span className="w-14 h-14 rounded-full bg-white border-2 border-black/10" />
-              )}
-            </button>
+            {(() => {
+              const alreadyCaptured = !!capturedImages[currentPose.id];
+              const detectionReady = liveDetection.state === 'good' || liveDetection.state === 'partial';
+              const canCapture = !alreadyCaptured && detectionReady;
 
-            <p
-              className={`text-[12px] font-mono uppercase tracking-wider ${
-                capturedImages[currentPose.id] ? 'text-emerald-400' : 'text-white/50'
-              }`}
-            >
-              {capturedImages[currentPose.id] ? 'Capturado' : 'Toca para capturar'}
-            </p>
+              return (
+                <>
+                  <button
+                    onClick={handleCapture}
+                    disabled={!canCapture}
+                    aria-label="Capturar pose"
+                    className={`relative w-20 h-20 rounded-full flex items-center justify-center transition-all duration-200 ${
+                      canCapture
+                        ? 'bg-white hover:scale-105 active:scale-95 cursor-pointer'
+                        : 'bg-white/10 cursor-not-allowed'
+                    }`}
+                    style={{
+                      boxShadow: canCapture
+                        ? '0 0 0 4px rgba(255,255,255,0.15), 0 0 0 1px rgba(255,255,255,0.3)'
+                        : '0 0 0 1px rgba(255,255,255,0.1)',
+                    }}
+                  >
+                    {alreadyCaptured ? (
+                      <svg
+                        className="w-7 h-7 text-emerald-400"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                    ) : (
+                      <span
+                        className={`w-14 h-14 rounded-full border-2 ${
+                          canCapture ? 'bg-white border-black/10' : 'bg-white/30 border-white/20'
+                        }`}
+                      />
+                    )}
+                  </button>
 
-            {capturedImages[currentPose.id] && (
-              <button
-                onClick={() => handleRetake(currentPose.id)}
-                className="text-[12px] text-white/50 hover:text-white transition-colors underline underline-offset-4"
-              >
-                Repetir foto
-              </button>
-            )}
+                  <p
+                    className={`text-[12px] font-mono uppercase tracking-wider ${
+                      alreadyCaptured
+                        ? 'text-emerald-400'
+                        : canCapture
+                        ? 'text-white/70'
+                        : 'text-amber-400/80'
+                    }`}
+                  >
+                    {alreadyCaptured
+                      ? 'Capturado'
+                      : liveDetection.state === 'no_person'
+                      ? 'Buscando cuerpo...'
+                      : liveDetection.state === 'too_close'
+                      ? 'Alejate de la camara'
+                      : liveDetection.state === 'partial'
+                      ? `Cuerpo parcial (${liveDetection.coverage}%)`
+                      : `Listo - toca para capturar`}
+                  </p>
+
+                  {alreadyCaptured && capturedLandmarks[currentPose.id].length === 0 && (
+                    <p className="text-[11px] text-amber-400/80 text-center max-w-xs">
+                      Esta foto no tiene puntos de pose detectados. Repite la captura asegurando que tu cuerpo entero sea visible.
+                    </p>
+                  )}
+
+                  {alreadyCaptured && (
+                    <button
+                      onClick={() => handleRetake(currentPose.id)}
+                      className="text-[12px] text-white/50 hover:text-white transition-colors underline underline-offset-4"
+                    >
+                      Repetir foto
+                    </button>
+                  )}
+                </>
+              );
+            })()}
           </div>
 
           {/* Navigation buttons */}
