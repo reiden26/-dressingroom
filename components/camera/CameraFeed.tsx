@@ -230,28 +230,28 @@ const CameraFeed = forwardRef<CameraFeedRef, CameraFeedProps>(
 
     if (error) {
       return (
-        <div className={`flex flex-col items-center justify-center bg-slate-900 rounded-2xl ${className}`}>
-          <svg className="w-12 h-12 text-rose-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className={`flex flex-col items-center justify-center bg-black ${className}`}>
+          <svg className="w-10 h-10 text-white/40 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
           </svg>
-          <p className="text-rose-400 text-sm text-center px-4">{error}</p>
+          <p className="text-white/60 text-sm text-center px-6 max-w-xs leading-relaxed">{error}</p>
         </div>
       );
     }
 
     return (
-      <div className={`relative overflow-hidden rounded-2xl bg-slate-900 ${className}`}>
+      <div className={`relative overflow-hidden bg-black ${className}`}>
         {(isLoading || !cameraReady) && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center z-10">
-            <div className="w-10 h-10 border-2 border-sky-500 border-t-transparent rounded-full animate-spin mb-3" />
-            <p className="text-slate-400 text-sm">Iniciando cámara...</p>
+          <div className="absolute inset-0 flex flex-col items-center justify-center z-10 bg-black">
+            <div className="w-10 h-10 border border-white/15 border-t-white rounded-full animate-spin mb-4" />
+            <p className="text-[12px] font-mono text-white/40 uppercase tracking-widest">Iniciando cámara</p>
           </div>
         )}
 
         {!isModelLoaded && cameraReady && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center z-10 bg-black/40">
-            <div className="w-10 h-10 border-2 border-sky-500 border-t-transparent rounded-full animate-spin mb-3" />
-            <p className="text-white text-sm animate-pulse">Cargando detector...</p>
+          <div className="absolute inset-0 flex flex-col items-center justify-center z-10 bg-black/60 backdrop-blur-sm">
+            <div className="w-10 h-10 border border-white/15 border-t-white rounded-full animate-spin mb-4" />
+            <p className="text-[12px] font-mono text-white/60 uppercase tracking-widest animate-pulse">Cargando detector</p>
           </div>
         )}
 

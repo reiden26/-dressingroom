@@ -4,7 +4,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { v4 as uuidv4 } from 'uuid';
 import CameraFeed, { type CameraFeedRef } from '@/components/camera/CameraFeed';
-import Button from '@/components/ui/Button';
+import Navbar from '@/components/layout/Navbar';
 import { useAppStore } from '@/store/useAppStore';
 import { POSES } from '@/lib/constants';
 import { savePose, clearAllPoses, saveProfile, saveMeasurements } from '@/lib/storage';
@@ -41,7 +41,7 @@ export default function ScanPage() {
     back: [],
   });
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [analysisResult, setAnalysisResult] = useState<{
+  const [, setAnalysisResult] = useState<{
     measurements: BodyMeasurements;
     warnings: string[];
   } | null>(null);
@@ -60,7 +60,7 @@ export default function ScanPage() {
     setWeight(0);
     setWeightInput('');
     setProfileEntered(false);
-  }, []);
+  }, [clearPoses]);
 
   const handleCapture = useCallback(() => {
     const poseId = POSE_STEPS[currentPoseIndex];
@@ -178,101 +178,104 @@ export default function ScanPage() {
   // ─── Step 1: Profile entry (height + weight) ──────────────────────────
   if (!profileEntered) {
     return (
-      <main className="min-h-screen bg-black flex items-center justify-center px-6 py-16">
-        <div className="w-full max-w-md">
-          <span className="inline-flex items-center gap-3 text-xs font-mono text-white/40 uppercase tracking-widest mb-8">
-            <span className="w-8 h-px bg-white/20" />
-            Paso 1 de 2 — Tus datos
-          </span>
+      <main className="min-h-screen bg-black">
+        <Navbar />
+        <div className="flex items-center justify-center px-6 pt-32 pb-16 min-h-screen">
+          <div className="w-full max-w-md">
+            <span className="inline-flex items-center gap-3 text-xs font-mono text-white/40 uppercase tracking-widest mb-8">
+              <span className="w-8 h-px bg-white/20" />
+              Paso 1 de 2 — Tus datos
+            </span>
 
-          <h1 className="text-5xl md:text-6xl font-display leading-[0.95] tracking-tight text-white mb-4 text-balance">
-            Antes de medir<span className="text-white/30">,</span>
-            <br />
-            <span className="text-white/40 italic">conócete.</span>
-          </h1>
+            <h1 className="text-5xl md:text-6xl font-display leading-[0.95] tracking-tight text-white mb-4 text-balance">
+              Antes de medir<span className="text-white/30">,</span>
+              <br />
+              <span className="text-white/40 italic">conócete.</span>
+            </h1>
 
-          <p className="text-white/50 leading-relaxed mb-12 text-[15px]">
-            Tu altura calibra los puntos del escaneo y tu peso refina el cálculo
-            de tallas para que coincidan con tu cuerpo real.
-          </p>
+            <p className="text-white/50 leading-relaxed mb-12 text-[15px]">
+              Tu altura calibra los puntos del escaneo y tu peso refina el cálculo
+              de tallas para que coincidan con tu cuerpo real.
+            </p>
 
-          <div className="space-y-6 mb-10">
-            {/* Height */}
-            <div>
-              <label className="block text-xs font-mono text-white/40 uppercase tracking-widest mb-3">
-                Altura
-              </label>
-              <div className="flex items-baseline gap-3 border-b border-white/10 focus-within:border-white/40 transition-colors pb-2">
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  value={heightInput}
-                  onChange={(e) => {
-                    const val = e.target.value.replace(/[^0-9]/g, '').slice(0, 3);
-                    setHeightInput(val);
-                    const numVal = parseInt(val, 10);
-                    setHeight(isNaN(numVal) ? 0 : numVal);
-                  }}
-                  placeholder="170"
-                  className="flex-1 bg-transparent text-4xl md:text-5xl font-display text-white placeholder:text-white/15 focus:outline-none"
-                  autoFocus
-                />
-                <span className="text-sm font-mono text-white/40">cm</span>
+            <div className="space-y-6 mb-10">
+              {/* Height */}
+              <div>
+                <label className="block text-xs font-mono text-white/40 uppercase tracking-widest mb-3">
+                  Altura
+                </label>
+                <div className="flex items-baseline gap-3 border-b border-white/10 focus-within:border-white/40 transition-colors pb-2">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    value={heightInput}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/[^0-9]/g, '').slice(0, 3);
+                      setHeightInput(val);
+                      const numVal = parseInt(val, 10);
+                      setHeight(isNaN(numVal) ? 0 : numVal);
+                    }}
+                    placeholder="170"
+                    className="flex-1 bg-transparent text-4xl md:text-5xl font-display text-white placeholder:text-white/15 focus:outline-none"
+                    autoFocus
+                  />
+                  <span className="text-sm font-mono text-white/40">cm</span>
+                </div>
+                <p className="mt-2 text-[11px] font-mono text-white/30">Entre 100 y 250 cm</p>
               </div>
-              <p className="mt-2 text-[11px] font-mono text-white/30">Entre 100 y 250 cm</p>
+
+              {/* Weight */}
+              <div>
+                <label className="block text-xs font-mono text-white/40 uppercase tracking-widest mb-3">
+                  Peso
+                </label>
+                <div className="flex items-baseline gap-3 border-b border-white/10 focus-within:border-white/40 transition-colors pb-2">
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    pattern="[0-9]*\.?[0-9]*"
+                    value={weightInput}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/[^0-9.]/g, '').slice(0, 5);
+                      setWeightInput(val);
+                      const numVal = parseFloat(val);
+                      setWeight(isNaN(numVal) ? 0 : numVal);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && profileValid) {
+                        e.preventDefault();
+                        handleProfileSubmit();
+                      }
+                    }}
+                    placeholder="70"
+                    className="flex-1 bg-transparent text-4xl md:text-5xl font-display text-white placeholder:text-white/15 focus:outline-none"
+                  />
+                  <span className="text-sm font-mono text-white/40">kg</span>
+                </div>
+                <p className="mt-2 text-[11px] font-mono text-white/30">Entre 30 y 250 kg</p>
+              </div>
             </div>
 
-            {/* Weight */}
-            <div>
-              <label className="block text-xs font-mono text-white/40 uppercase tracking-widest mb-3">
-                Peso
-              </label>
-              <div className="flex items-baseline gap-3 border-b border-white/10 focus-within:border-white/40 transition-colors pb-2">
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  pattern="[0-9]*\.?[0-9]*"
-                  value={weightInput}
-                  onChange={(e) => {
-                    const val = e.target.value.replace(/[^0-9.]/g, '').slice(0, 5);
-                    setWeightInput(val);
-                    const numVal = parseFloat(val);
-                    setWeight(isNaN(numVal) ? 0 : numVal);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && profileValid) {
-                      e.preventDefault();
-                      handleProfileSubmit();
-                    }
-                  }}
-                  placeholder="70"
-                  className="flex-1 bg-transparent text-4xl md:text-5xl font-display text-white placeholder:text-white/15 focus:outline-none"
-                />
-                <span className="text-sm font-mono text-white/40">kg</span>
-              </div>
-              <p className="mt-2 text-[11px] font-mono text-white/30">Entre 30 y 250 kg</p>
-            </div>
+            <button
+              onClick={handleProfileSubmit}
+              disabled={!profileValid}
+              className={`w-full h-14 rounded-full font-medium text-[15px] transition-all duration-200 flex items-center justify-center gap-2 ${
+                profileValid
+                  ? 'bg-white text-black hover:bg-white/90 active:scale-[0.99]'
+                  : 'bg-white/10 text-white/30 cursor-not-allowed'
+              }`}
+            >
+              Comenzar escaneo
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+              </svg>
+            </button>
+
+            <p className="mt-6 text-[11px] text-white/30 leading-relaxed text-center">
+              Tus datos se procesan localmente en tu dispositivo. Nada se envía a un servidor.
+            </p>
           </div>
-
-          <button
-            onClick={handleProfileSubmit}
-            disabled={!profileValid}
-            className={`w-full h-14 rounded-full font-medium text-[15px] transition-all duration-200 flex items-center justify-center gap-2 ${
-              profileValid
-                ? 'bg-white text-black hover:bg-white/90 active:scale-[0.99]'
-                : 'bg-white/10 text-white/30 cursor-not-allowed'
-            }`}
-          >
-            Comenzar escaneo
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M14 5l7 7m0 0l-7 7m7-7H3" />
-            </svg>
-          </button>
-
-          <p className="mt-6 text-[11px] text-white/30 leading-relaxed text-center">
-            Tus datos se procesan localmente en tu dispositivo. Nada se envía a un servidor.
-          </p>
         </div>
       </main>
     );
@@ -281,67 +284,71 @@ export default function ScanPage() {
   // ─── Capture summary (3 poses captured, before analysis) ──────────────
   if (isAllCaptured && !isAnalyzing) {
     return (
-      <main className="min-h-screen bg-black pb-32 px-6 pt-20">
-        <div className="max-w-lg mx-auto">
-          <span className="inline-flex items-center gap-3 text-xs font-mono text-white/40 uppercase tracking-widest mb-6">
-            <span className="w-8 h-px bg-white/20" />
-            Capturas listas
-          </span>
+      <main className="min-h-screen bg-black">
+        <Navbar />
+        <div className="pb-32 px-6 pt-32">
+          <div className="max-w-lg mx-auto">
+            <span className="inline-flex items-center gap-3 text-xs font-mono text-white/40 uppercase tracking-widest mb-6">
+              <span className="w-8 h-px bg-white/20" />
+              Capturas listas
+            </span>
 
-          <h1 className="text-4xl md:text-5xl font-display leading-[0.95] tracking-tight text-white mb-3 text-balance">
-            Tres ángulos<span className="text-white/30">,</span>
-            <br />
-            <span className="text-white/40 italic">un cuerpo.</span>
-          </h1>
+            <h1 className="text-4xl md:text-5xl font-display leading-[0.95] tracking-tight text-white mb-3 text-balance">
+              Tres ángulos<span className="text-white/30">,</span>
+              <br />
+              <span className="text-white/40 italic">un cuerpo.</span>
+            </h1>
 
-          <p className="text-white/50 mb-10 text-[14px] leading-relaxed">
-            Verifica que las imágenes muestren tu cuerpo completo y prosigue al análisis.
-          </p>
+            <p className="text-white/50 mb-10 text-[14px] leading-relaxed">
+              Verifica que las imágenes muestren tu cuerpo completo y prosigue al análisis.
+            </p>
 
-          <div className="grid grid-cols-3 gap-3 mb-10">
-            {POSE_STEPS.map((poseId) => {
-              const pose = POSES.find((p) => p.id === poseId);
-              return (
-                <div key={poseId}>
-                  <div className="aspect-[3/4] rounded-xl overflow-hidden mb-2 border border-white/10 bg-white/[0.02]">
-                    {capturedImages[poseId] && (
-                      <img src={capturedImages[poseId] || undefined} alt={pose?.name} className="w-full h-full object-cover" />
-                    )}
+            <div className="grid grid-cols-3 gap-3 mb-10">
+              {POSE_STEPS.map((poseId) => {
+                const pose = POSES.find((p) => p.id === poseId);
+                return (
+                  <div key={poseId}>
+                    <div className="aspect-[3/4] rounded-xl overflow-hidden mb-2 border border-white/10 bg-white/[0.02]">
+                      {capturedImages[poseId] && (
+                        <img src={capturedImages[poseId] || undefined} alt={pose?.name} className="w-full h-full object-cover" />
+                      )}
+                    </div>
+                    <p className="text-[12px] font-mono text-white/60 text-center">{pose?.name}</p>
+                    <button
+                      onClick={() => handleRetake(poseId)}
+                      className="block mx-auto text-[10.5px] text-white/30 hover:text-white/60 transition-colors mt-1"
+                    >
+                      Repetir
+                    </button>
                   </div>
-                  <p className="text-[12px] font-mono text-white/60 text-center">{pose?.name}</p>
-                  <button
-                    onClick={() => handleRetake(poseId)}
-                    className="block mx-auto text-[10.5px] text-white/30 hover:text-white/60 transition-colors mt-1"
-                  >
-                    Repetir
-                  </button>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
 
-          <div className="flex gap-3">
-            <button
-              onClick={() => setCapturedImages({ front: null, side: null, back: null })}
-              className="flex-1 h-12 rounded-full border border-white/15 text-white/70 hover:bg-white/5 hover:text-white text-[13px] font-medium transition-colors"
-            >
-              Repetir todo
-            </button>
-            <button
-              onClick={handleAnalyze}
-              className="flex-1 h-12 rounded-full bg-white text-black hover:bg-white/90 text-[13px] font-medium transition-colors flex items-center justify-center gap-2"
-            >
-              Analizar medidas
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M14 5l7 7m0 0l-7 7m7-7H3" />
-              </svg>
-            </button>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setCapturedImages({ front: null, side: null, back: null })}
+                className="flex-1 h-12 rounded-full border border-white/15 text-white/70 hover:bg-white/5 hover:text-white text-[13px] font-medium transition-colors"
+              >
+                Repetir todo
+              </button>
+              <button
+                onClick={handleAnalyze}
+                className="flex-1 h-12 rounded-full bg-white text-black hover:bg-white/90 text-[13px] font-medium transition-colors flex items-center justify-center gap-2"
+              >
+                Analizar medidas
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
       </main>
     );
   }
 
+  // ─── Analyzing state — fullscreen blocker, no nav ────────────────────
   if (isAnalyzing) {
     return (
       <main className="min-h-screen bg-black flex items-center justify-center">
@@ -354,110 +361,160 @@ export default function ScanPage() {
     );
   }
 
+  // ─── Camera capture step ────────────────────────────────────────────
   return (
-    <main className="min-h-screen bg-app pb-48">
-      <div className="container mx-auto px-4 pt-4">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-4">
-          <button onClick={() => router.push('/')} className="text-slate-500 hover:text-slate-700 p-2">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
+    <main className="min-h-screen bg-black">
+      <Navbar />
 
-          <div className="flex gap-2">
-            {POSE_STEPS.map((poseId, index) => (
+      <div className="px-6 pt-28 pb-16 max-w-xl mx-auto">
+        {/* Step header */}
+        <div className="mb-8">
+          <span className="inline-flex items-center gap-3 text-xs font-mono text-white/40 uppercase tracking-widest mb-5">
+            <span className="w-8 h-px bg-white/20" />
+            Paso 2 de 2 — Captura {currentPoseIndex + 1} de 3
+          </span>
+
+          <h1 className="text-4xl md:text-[44px] font-display leading-[0.95] tracking-tight text-white mb-2 text-balance">
+            {currentPose.name.split(' ')[0]}{' '}
+            <span className="text-white/40 italic">
+              {currentPose.name.split(' ').slice(1).join(' ') || ''}
+            </span>
+          </h1>
+
+          <p className="text-white/50 text-[14px] leading-relaxed">
+            {currentPose.instruction}
+          </p>
+        </div>
+
+        {/* Pose progress dots */}
+        <div className="flex items-center justify-center gap-2 mb-6">
+          {POSE_STEPS.map((poseId, index) => {
+            const captured = !!capturedImages[poseId];
+            const isCurrent = index === currentPoseIndex;
+            return (
               <button
                 key={poseId}
                 onClick={() => setCurrentPoseIndex(index)}
-                className={`w-2.5 h-2.5 rounded-full transition-colors ${
-                  capturedImages[poseId]
-                    ? 'bg-emerald-500'
-                    : index === currentPoseIndex
-                    ? 'bg-sky-500'
-                    : 'bg-slate-300'
-                }`}
-              />
-            ))}
-          </div>
-
-          <div className="w-9" />
+                className="flex items-center gap-2 group"
+                aria-label={`Ir a captura ${index + 1}`}
+              >
+                <span
+                  className={`block transition-all duration-300 rounded-full ${
+                    captured
+                      ? 'w-8 h-1 bg-sky-400'
+                      : isCurrent
+                      ? 'w-8 h-1 bg-white'
+                      : 'w-4 h-1 bg-white/15 group-hover:bg-white/30'
+                  }`}
+                />
+              </button>
+            );
+          })}
         </div>
 
-        {/* Pose title */}
-        <div className="text-center mb-4">
-          <h2 className="text-[15px] font-semibold text-slate-800">{currentPose.name}</h2>
-          <p className="text-[12.5px] text-slate-500">{currentPose.instruction}</p>
-        </div>
+        {/* Camera viewport */}
+        <div className="relative w-full aspect-[3/4] rounded-3xl overflow-hidden border border-white/10 bg-white/[0.02] mb-6">
+          <CameraFeed ref={cameraRef} className="w-full h-full" />
 
-        {/* Main camera container */}
-        <div className="flex flex-col items-center gap-4 mt-6">
-          {/* Video + Canvas overlay */}
-          <div className="relative w-full max-w-lg aspect-[3/4] rounded-2xl overflow-hidden ring-1 ring-white/40 shadow-lg">
-            <CameraFeed ref={cameraRef} className="w-full h-full" />
-          </div>
-
-          {/* Capture button */}
-          <div className="flex flex-col items-center gap-2">
-            <button
-              onClick={handleCapture}
-              disabled={!!capturedImages[currentPose.id]}
-              className={`
-                w-14 h-14 rounded-full flex items-center justify-center
-                transition-all duration-200 ring-1
-                ${!capturedImages[currentPose.id]
-                  ? 'bg-white/70 ring-white/60 hover:bg-white/80 cursor-pointer'
-                  : 'bg-slate-200/50 ring-slate-300/50 cursor-not-allowed opacity-60'}
-              `}
-            >
-              <svg className="w-6 h-6 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-            </button>
-
-            <p className={`text-[12.5px] font-medium ${
-              capturedImages[currentPose.id] ? 'text-emerald-600' : 'text-slate-500'
-            }`}>
-              {capturedImages[currentPose.id] ? 'Capturado' : 'Toca para capturar'}
-            </p>
-          </div>
-
-          {/* Retake photo link */}
+          {/* Captured overlay */}
           {capturedImages[currentPose.id] && (
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center z-20">
+              <img
+                src={capturedImages[currentPose.id] || undefined}
+                alt={currentPose.name}
+                className="absolute inset-0 w-full h-full object-cover opacity-70"
+              />
+              <div className="relative z-10 flex flex-col items-center">
+                <div className="w-12 h-12 rounded-full bg-sky-400/20 border border-sky-400/60 flex items-center justify-center mb-3 backdrop-blur-md">
+                  <svg className="w-5 h-5 text-sky-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+                <p className="text-[12px] font-mono text-white/80 uppercase tracking-widest">
+                  Captura realizada
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Capture / Retake button */}
+        <div className="flex flex-col items-center gap-3 mb-8">
+          {!capturedImages[currentPose.id] ? (
+            <>
+              <button
+                onClick={handleCapture}
+                className="group relative w-20 h-20 rounded-full flex items-center justify-center transition-all active:scale-95"
+                aria-label="Capturar foto"
+              >
+                <span className="absolute inset-0 rounded-full border border-white/30 group-hover:border-white/60 transition-colors" />
+                <span className="absolute inset-2 rounded-full bg-white group-hover:bg-white/90 transition-colors" />
+              </button>
+              <p className="text-[11px] font-mono text-white/40 uppercase tracking-widest">
+                Toca para capturar
+              </p>
+            </>
+          ) : (
             <button
               onClick={() => handleRetake(currentPose.id)}
-              className="text-[12.5px] text-slate-400 hover:text-slate-600"
+              className="px-6 h-11 rounded-full border border-white/15 text-white/70 hover:bg-white/5 hover:text-white text-[13px] font-medium transition-colors flex items-center gap-2"
             >
-              Repetir foto
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              Repetir captura
             </button>
           )}
+        </div>
 
-          {/* Navigation buttons */}
-          <div className="flex gap-3 mt-4 w-full max-w-md">
-            {currentPoseIndex > 0 && (
-              <Button variant="secondary" onClick={handlePrevPose} className="flex-1">
-                Anterior
-              </Button>
-            )}
-            {currentPoseIndex < 2 ? (
-              <Button
-                onClick={handleNextPose}
-                disabled={!capturedImages[currentPose.id]}
-                className="flex-1"
-              >
-                Siguiente
-              </Button>
-            ) : (
-              <Button
-                onClick={() => router.push('/profile')}
-                disabled={!isAllCaptured}
-                className="flex-1"
-              >
-                Ver Resultados
-              </Button>
-            )}
-          </div>
+        {/* Pose navigation */}
+        <div className="flex gap-3">
+          <button
+            onClick={handlePrevPose}
+            disabled={currentPoseIndex === 0}
+            className={`flex-1 h-12 rounded-full border text-[13px] font-medium transition-colors flex items-center justify-center gap-2 ${
+              currentPoseIndex === 0
+                ? 'border-white/5 text-white/20 cursor-not-allowed'
+                : 'border-white/15 text-white/70 hover:bg-white/5 hover:text-white'
+            }`}
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            </svg>
+            Anterior
+          </button>
+
+          {currentPoseIndex < 2 ? (
+            <button
+              onClick={handleNextPose}
+              disabled={!capturedImages[currentPose.id]}
+              className={`flex-1 h-12 rounded-full text-[13px] font-medium transition-colors flex items-center justify-center gap-2 ${
+                capturedImages[currentPose.id]
+                  ? 'bg-white text-black hover:bg-white/90'
+                  : 'bg-white/10 text-white/30 cursor-not-allowed'
+              }`}
+            >
+              Siguiente
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+              </svg>
+            </button>
+          ) : (
+            <button
+              onClick={() => {/* All captured handler activates the summary screen automatically */}}
+              disabled={!isAllCaptured}
+              className={`flex-1 h-12 rounded-full text-[13px] font-medium transition-colors flex items-center justify-center gap-2 ${
+                isAllCaptured
+                  ? 'bg-white text-black hover:bg-white/90'
+                  : 'bg-white/10 text-white/30 cursor-not-allowed'
+              }`}
+            >
+              Finalizar
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 13l4 4L19 7" />
+              </svg>
+            </button>
+          )}
         </div>
       </div>
     </main>
