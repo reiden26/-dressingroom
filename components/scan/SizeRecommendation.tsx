@@ -8,74 +8,76 @@ interface SizeRecommendationProps {
   onEdit?: () => void;
 }
 
-type GarmentType = 'top' | 'bottom' | 'dress' | 'shoes';
+interface SizeRange {
+  size: string;
+  chest?: { min: number; max: number };
+  waist?: { min: number; max: number };
+  hips?: { min: number; max: number };
+  inseam?: { min: number; max: number };
+}
 
 interface SizeChart {
   name: string;
-  icon: string;
-  measurements: {
-    size: string;
-    chest?: { min: number; max: number };
-    waist?: { min: number; max: number };
-    hips?: { min: number; max: number };
-    inseam?: { min: number; max: number };
-  }[];
+  category: 'top' | 'bottom' | 'dress' | 'shoes';
+  measurements: SizeRange[];
 }
+
+const SIZE_ORDER = ['XS', 'S', 'M', 'L', 'XL', 'XXL'] as const;
 
 const SIZE_CHARTS: SizeChart[] = [
   {
-    name: 'Camiseta / Top',
-    icon: 'M6 4h12v4l-3 2v10h-6V10l-3-2V4z',
+    name: 'Camiseta · Top',
+    category: 'top',
     measurements: [
-      { size: 'XS', chest: { min: 78, max: 82 } },
-      { size: 'S', chest: { min: 82, max: 88 } },
-      { size: 'M', chest: { min: 88, max: 96 } },
-      { size: 'L', chest: { min: 96, max: 104 } },
-      { size: 'XL', chest: { min: 104, max: 112 } },
-      { size: 'XXL', chest: { min: 112, max: 120 } },
+      { size: 'XS', chest: { min: 78, max: 84 } },
+      { size: 'S',  chest: { min: 84, max: 90 } },
+      { size: 'M',  chest: { min: 90, max: 98 } },
+      { size: 'L',  chest: { min: 98, max: 106 } },
+      { size: 'XL', chest: { min: 106, max: 114 } },
+      { size: 'XXL', chest: { min: 114, max: 124 } },
     ],
   },
   {
     name: 'Pantalón',
-    icon: 'M6 4h12v4l-1 14h-4l-1-10-1 10h-4l-1-14V4z',
+    category: 'bottom',
     measurements: [
-      { size: 'XS', waist: { min: 58, max: 62 } },
-      { size: 'S', waist: { min: 62, max: 68 } },
-      { size: 'M', waist: { min: 68, max: 76 } },
-      { size: 'L', waist: { min: 76, max: 84 } },
-      { size: 'XL', waist: { min: 84, max: 92 } },
-      { size: 'XXL', waist: { min: 92, max: 100 } },
+      { size: 'XS', waist: { min: 60, max: 66 } },
+      { size: 'S',  waist: { min: 66, max: 72 } },
+      { size: 'M',  waist: { min: 72, max: 80 } },
+      { size: 'L',  waist: { min: 80, max: 88 } },
+      { size: 'XL', waist: { min: 88, max: 96 } },
+      { size: 'XXL', waist: { min: 96, max: 106 } },
     ],
   },
   {
     name: 'Vestido',
-    icon: 'M12 2c-2 0-3 1-3 3l-3 6 2 1v12h8V12l2-1-3-6c0-2-1-3-3-3z',
+    category: 'dress',
     measurements: [
-      { size: 'XS', chest: { min: 78, max: 82 }, waist: { min: 58, max: 62 }, hips: { min: 84, max: 88 } },
-      { size: 'S', chest: { min: 82, max: 88 }, waist: { min: 62, max: 68 }, hips: { min: 88, max: 94 } },
-      { size: 'M', chest: { min: 88, max: 96 }, waist: { min: 68, max: 76 }, hips: { min: 94, max: 102 } },
-      { size: 'L', chest: { min: 96, max: 104 }, waist: { min: 76, max: 84 }, hips: { min: 102, max: 110 } },
-      { size: 'XL', chest: { min: 104, max: 112 }, waist: { min: 84, max: 92 }, hips: { min: 110, max: 118 } },
+      { size: 'XS', chest: { min: 78, max: 84 }, waist: { min: 60, max: 66 }, hips: { min: 84, max: 90 } },
+      { size: 'S',  chest: { min: 84, max: 90 }, waist: { min: 66, max: 72 }, hips: { min: 90, max: 96 } },
+      { size: 'M',  chest: { min: 90, max: 98 }, waist: { min: 72, max: 80 }, hips: { min: 96, max: 104 } },
+      { size: 'L',  chest: { min: 98, max: 106 }, waist: { min: 80, max: 88 }, hips: { min: 104, max: 112 } },
+      { size: 'XL', chest: { min: 106, max: 114 }, waist: { min: 88, max: 96 }, hips: { min: 112, max: 120 } },
     ],
   },
   {
-    name: 'Zapatos',
-    icon: 'M4 16c0-2 1-3 3-3h10c2 0 3 1 3 3v2H4v-2z',
+    name: 'Calzado',
+    category: 'shoes',
     measurements: [
-      { size: '37', inseam: { min: 23, max: 23.5 } },
-      { size: '38', inseam: { min: 23.5, max: 24 } },
-      { size: '39', inseam: { min: 24, max: 24.5 } },
-      { size: '40', inseam: { min: 24.5, max: 25 } },
-      { size: '41', inseam: { min: 25, max: 25.5 } },
-      { size: '42', inseam: { min: 25.5, max: 26 } },
+      { size: '37', inseam: { min: 70, max: 73 } },
+      { size: '38', inseam: { min: 73, max: 76 } },
+      { size: '39', inseam: { min: 76, max: 79 } },
+      { size: '40', inseam: { min: 79, max: 82 } },
+      { size: '41', inseam: { min: 82, max: 85 } },
+      { size: '42', inseam: { min: 85, max: 88 } },
+      { size: '43', inseam: { min: 88, max: 100 } },
     ],
   },
 ];
 
-function findSize(charts: SizeChart, measurements: BodyMeasurements): string | null {
-  for (const entry of charts.measurements) {
-    const { chest, waist, hips } = entry;
-
+function findSizeFromMeasurements(chart: SizeChart, measurements: BodyMeasurements): string | null {
+  for (const entry of chart.measurements) {
+    const { chest, waist, hips, inseam } = entry;
     let matches = 0;
     let total = 0;
 
@@ -91,23 +93,32 @@ function findSize(charts: SizeChart, measurements: BodyMeasurements): string | n
       total++;
       if (measurements.hips >= hips.min && measurements.hips < hips.max) matches++;
     }
-
-    if (total > 0 && matches === total) {
-      return entry.size;
+    if (inseam && measurements.inseam > 0) {
+      total++;
+      if (measurements.inseam >= inseam.min && measurements.inseam < inseam.max) matches++;
     }
+
+    if (total > 0 && matches === total) return entry.size;
   }
 
-  // Fallback: use chest for tops, waist for bottoms
-  if (charts.name.includes('Camiseta') && measurements.chest > 0) {
-    for (const entry of charts.measurements) {
+  // Fallbacks for top/bottom: use the most relevant measurement only
+  if (chart.category === 'top' && measurements.chest > 0) {
+    for (const entry of chart.measurements) {
       if (entry.chest && measurements.chest >= entry.chest.min && measurements.chest < entry.chest.max) {
         return entry.size;
       }
     }
   }
-  if (charts.name.includes('Pantalón') && measurements.waist > 0) {
-    for (const entry of charts.measurements) {
+  if (chart.category === 'bottom' && measurements.waist > 0) {
+    for (const entry of chart.measurements) {
       if (entry.waist && measurements.waist >= entry.waist.min && measurements.waist < entry.waist.max) {
+        return entry.size;
+      }
+    }
+  }
+  if (chart.category === 'shoes' && measurements.inseam > 0) {
+    for (const entry of chart.measurements) {
+      if (entry.inseam && measurements.inseam >= entry.inseam.min && measurements.inseam < entry.inseam.max) {
         return entry.size;
       }
     }
@@ -116,66 +127,108 @@ function findSize(charts: SizeChart, measurements: BodyMeasurements): string | n
   return null;
 }
 
-function GarmentCard({
+/**
+ * Map a BMI to an expected lettered size for an average-build adult.
+ * Used as a sanity-check floor for top/dress recommendations so very lean
+ * shoulders + a normal/overweight BMI never produces an XS recommendation
+ * for an M-sized person.
+ */
+function bmiToExpectedSize(bmi: number | undefined): string | null {
+  if (typeof bmi !== 'number') return null;
+  if (bmi < 18) return 'XS';
+  if (bmi < 21) return 'S';
+  if (bmi < 25) return 'M';
+  if (bmi < 28) return 'L';
+  if (bmi < 32) return 'XL';
+  return 'XXL';
+}
+
+function maxSize(a: string | null, b: string | null): string | null {
+  if (!a) return b;
+  if (!b) return a;
+  const ai = SIZE_ORDER.indexOf(a as (typeof SIZE_ORDER)[number]);
+  const bi = SIZE_ORDER.indexOf(b as (typeof SIZE_ORDER)[number]);
+  if (ai === -1) return b;
+  if (bi === -1) return a;
+  return SIZE_ORDER[Math.max(ai, bi)];
+}
+
+function GarmentRow({
   chart,
-  measurements,
-  delay
+  recommendedSize,
+  delay,
 }: {
   chart: SizeChart;
-  measurements: BodyMeasurements;
+  recommendedSize: string | null;
   delay: number;
 }) {
   const [visible, setVisible] = useState(false);
-  const [recommendedSize, setRecommendedSize] = useState<string | null>(null);
+  const [animatedSize, setAnimatedSize] = useState<string | null>(null);
 
   useEffect(() => {
-    setTimeout(() => setVisible(true), delay);
-    const size = findSize(chart, measurements);
-    setTimeout(() => setRecommendedSize(size), delay + 300);
-  }, [chart, measurements, delay]);
+    const t1 = setTimeout(() => setVisible(true), delay);
+    const t2 = setTimeout(() => setAnimatedSize(recommendedSize), delay + 250);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [delay, recommendedSize]);
 
   return (
     <div
-      className={`bg-zinc-900/50 backdrop-blur rounded-xl p-4 border border-zinc-800 transition-all duration-500 ${
-        visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'
+      className={`grid grid-cols-12 gap-4 items-center py-6 border-b border-white/8 transition-all duration-700 ${
+        visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'
       }`}
     >
-      <div className="flex items-center gap-3 mb-3">
-        <div className="w-10 h-10 rounded-xl bg-indigo-500/10 flex items-center justify-center">
-          <svg className="w-5 h-5 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-            <path d={chart.icon} strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
+      <div className="col-span-5 md:col-span-4">
+        <p className="text-[11px] font-mono text-white/35 uppercase tracking-widest mb-1.5">
+          {chart.category === 'top' ? 'Parte superior' :
+           chart.category === 'bottom' ? 'Parte inferior' :
+           chart.category === 'dress' ? 'Una pieza' : 'Calzado'}
+        </p>
+        <h4 className="text-[17px] text-white font-medium">{chart.name}</h4>
+      </div>
+
+      <div className="col-span-7 md:col-span-8 flex items-center gap-6 justify-end">
+        {/* Range bar */}
+        <div className="hidden md:flex flex-1 items-center gap-1 max-w-[260px]">
+          {chart.measurements.map((entry) => {
+            const isRecommended = entry.size === animatedSize;
+            return (
+              <div key={entry.size} className="flex-1 flex flex-col items-center gap-1">
+                <div
+                  className={`w-full transition-all duration-500 ${
+                    isRecommended
+                      ? 'h-1.5 bg-white'
+                      : animatedSize
+                      ? 'h-px bg-white/15'
+                      : 'h-px bg-white/25'
+                  }`}
+                />
+                <span className={`text-[9.5px] font-mono transition-colors duration-300 ${
+                  isRecommended ? 'text-white' : 'text-white/25'
+                }`}>
+                  {entry.size}
+                </span>
+              </div>
+            );
+          })}
         </div>
-        <h4 className="text-white font-medium">{chart.name}</h4>
-      </div>
 
-      <div className="flex items-center justify-between">
-        <span className="text-zinc-400 text-sm">Talla recomendada</span>
-        {recommendedSize ? (
-          <span className="text-2xl font-bold text-indigo-400">{recommendedSize}</span>
-        ) : (
-          <span className="text-zinc-500">—</span>
-        )}
-      </div>
-
-      {/* Size range indicator */}
-      <div className="flex gap-1 mt-3">
-        {chart.measurements.map((entry) => {
-          const isRecommended = entry.size === recommendedSize;
-          return (
-            <div
-              key={entry.size}
-              className={`flex-1 h-1 rounded-full transition-all duration-300 ${
-                isRecommended
-                  ? 'bg-indigo-500 scale-y-150'
-                  : recommendedSize && !isRecommended
-                  ? 'bg-zinc-700'
-                  : 'bg-zinc-600'
-              }`}
-              style={{ transitionDelay: `${delay + 400 + chart.measurements.indexOf(entry) * 50}ms` }}
-            />
-          );
-        })}
+        {/* Recommended size */}
+        <div className="text-right min-w-[60px]">
+          {animatedSize ? (
+            <span
+              key={animatedSize}
+              className="block text-5xl md:text-6xl font-display text-white leading-none"
+              style={{ animation: 'sizeReveal 0.6s ease-out both' }}
+            >
+              {animatedSize}
+            </span>
+          ) : (
+            <span className="text-5xl md:text-6xl font-display text-white/15 leading-none">—</span>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -190,52 +243,102 @@ export default function SizeRecommendation({ measurements, onEdit }: SizeRecomme
 
   if (!mounted) {
     return (
-      <div className="space-y-4">
-        <h3 className="text-lg font-semibold text-white">Tallas Sugeridas</h3>
-        <div className="grid grid-cols-2 gap-3">
+      <section>
+        <h3 className="text-3xl md:text-4xl font-display text-white mb-8">Tallas sugeridas</h3>
+        <div className="space-y-3">
           {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="h-24 bg-zinc-900/50 rounded-xl animate-pulse" />
+            <div key={i} className="h-20 bg-white/[0.03] rounded animate-pulse" />
           ))}
         </div>
-      </div>
+      </section>
     );
   }
 
+  const expected = bmiToExpectedSize(measurements.bmi);
+
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold text-white">Tallas Sugeridas</h3>
+    <section className="relative">
+      <div className="flex items-end justify-between mb-10">
+        <div>
+          <span className="text-[11px] font-mono text-white/40 uppercase tracking-widest">
+            Sección 02 — Tallas sugeridas
+          </span>
+          <h2 className="text-3xl md:text-4xl font-display text-white mt-3 leading-none">
+            Tu talla, <span className="italic text-white/50">por prenda.</span>
+          </h2>
+        </div>
         <button
           onClick={onEdit}
-          className="text-indigo-400 text-sm hover:text-indigo-300 flex items-center gap-1"
+          className="hidden sm:inline-flex items-center gap-1.5 text-[12px] text-white/50 hover:text-white transition-colors"
         >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
           </svg>
           Editar medidas
         </button>
       </div>
 
-      <p className="text-zinc-400 text-sm">
-        Basado en tus medidas, estas son las tallas que te recomendamos según las guías estándar de tallaje.
-      </p>
+      <div className="border-t border-white/15">
+        {SIZE_CHARTS.map((chart, index) => {
+          let raw = findSizeFromMeasurements(chart, measurements);
 
-      <div className="grid grid-cols-2 gap-3">
-        {SIZE_CHARTS.map((chart, index) => (
-          <GarmentCard
-            key={chart.name}
-            chart={chart}
-            measurements={measurements}
-            delay={600 + index * 150}
-          />
-        ))}
+          // For tops/dresses, never go below the BMI-expected size by more than
+          // 1 step — this prevents a lean shoulder reading from giving an XS to
+          // someone whose weight indicates an M.
+          if ((chart.category === 'top' || chart.category === 'dress') && expected) {
+            const rawIdx = raw ? SIZE_ORDER.indexOf(raw as (typeof SIZE_ORDER)[number]) : -1;
+            const expIdx = SIZE_ORDER.indexOf(expected as (typeof SIZE_ORDER)[number]);
+            if (rawIdx === -1 || expIdx - rawIdx > 1) {
+              raw = expected;
+            }
+          }
+
+          return (
+            <GarmentRow
+              key={chart.name}
+              chart={chart}
+              recommendedSize={raw}
+              delay={400 + index * 120}
+            />
+          );
+        })}
       </div>
 
-      <div className="mt-4 p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg">
-        <p className="text-amber-400 text-xs">
-          <span className="font-medium">Nota:</span> Las tallas pueden variar entre marcas. Te recomendamos verificar la guía de tallas específica antes de comprar.
+      {/* Note */}
+      <div className="mt-8 flex items-start gap-3 p-4 border border-white/10 rounded-lg bg-white/[0.02]">
+        <svg className="w-4 h-4 text-white/40 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        <p className="text-[12px] text-white/50 leading-relaxed">
+          Las tallas de cada marca varían ligeramente. Estos valores son una guía
+          basada en tus medidas y tu peso — verifica la tabla específica antes de comprar.
         </p>
       </div>
-    </div>
+
+      <button
+        onClick={onEdit}
+        className="sm:hidden mt-6 inline-flex items-center gap-1.5 text-[12px] text-white/50 hover:text-white transition-colors"
+      >
+        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+        </svg>
+        Editar medidas
+      </button>
+
+      <style jsx>{`
+        @keyframes sizeReveal {
+          0% {
+            opacity: 0;
+            transform: translateY(10px) scale(0.92);
+            filter: blur(6px);
+          }
+          100% {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+            filter: blur(0);
+          }
+        }
+      `}</style>
+    </section>
   );
 }

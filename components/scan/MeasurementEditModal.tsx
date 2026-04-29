@@ -18,8 +18,8 @@ const MEASUREMENT_CONFIG: { key: MeasurementKey; label: string; min: number; max
   { key: 'waist', label: 'Cintura', min: 50, max: 130, step: 0.5 },
   { key: 'hips', label: 'Cadera', min: 60, max: 150, step: 0.5 },
   { key: 'inseam', label: 'Entrepierna', min: 50, max: 100, step: 0.5 },
-  { key: 'armLength', label: 'Largo brazo', min: 40, max: 80, step: 0.5 },
-  { key: 'torsoLength', label: 'Largo torso', min: 30, max: 70, step: 0.5 },
+  { key: 'armLength', label: 'Largo de brazo', min: 40, max: 80, step: 0.5 },
+  { key: 'torsoLength', label: 'Largo de torso', min: 30, max: 70, step: 0.5 },
 ];
 
 function NumberInput({
@@ -28,7 +28,7 @@ function NumberInput({
   onChange,
   min,
   max,
-  step
+  step,
 }: {
   label: string;
   value: number;
@@ -49,19 +49,23 @@ function NumberInput({
     setLocalValue(clamped.toString());
   };
 
-  const increment = () => handleChange(value + step);
-  const decrement = () => handleChange(value - step);
+  const increment = () => handleChange(Math.round((value + step) * 2) / 2);
+  const decrement = () => handleChange(Math.round((value - step) * 2) / 2);
 
   return (
-    <div className="flex items-center gap-3">
-      <span className="text-zinc-400 text-sm w-24">{label}</span>
-      <div className="flex-1 flex items-center gap-2">
+    <div className="grid grid-cols-12 gap-3 items-center py-4 border-b border-white/8 last:border-0">
+      <span className="col-span-5 text-[12px] font-mono text-white/55 uppercase tracking-wider">
+        {label}
+      </span>
+      <div className="col-span-7 flex items-center justify-end gap-2">
         <button
+          type="button"
           onClick={decrement}
-          className="w-10 h-10 rounded-xl bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center text-white transition-colors"
+          aria-label={`Disminuir ${label}`}
+          className="w-9 h-9 rounded-full border border-white/15 hover:border-white/40 hover:bg-white/5 text-white/70 hover:text-white flex items-center justify-center transition-colors"
         >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M20 12H4" />
           </svg>
         </button>
         <input
@@ -78,17 +82,19 @@ function NumberInput({
               if (!isNaN(parsed)) handleChange(parsed);
             }
           }}
-          className="flex-1 h-10 bg-zinc-900 border border-zinc-700 rounded-xl text-white text-center font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+          className="w-20 h-9 bg-transparent border-b border-white/15 focus:border-white/60 text-white text-center text-lg font-display tabular-nums focus:outline-none transition-colors"
         />
         <button
+          type="button"
           onClick={increment}
-          className="w-10 h-10 rounded-xl bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center text-white transition-colors"
+          aria-label={`Aumentar ${label}`}
+          className="w-9 h-9 rounded-full border border-white/15 hover:border-white/40 hover:bg-white/5 text-white/70 hover:text-white flex items-center justify-center transition-colors"
         >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 4v16m8-8H4" />
           </svg>
         </button>
-        <span className="text-zinc-500 text-sm w-8">cm</span>
+        <span className="text-[10px] font-mono text-white/30 w-6">cm</span>
       </div>
     </div>
   );
@@ -98,7 +104,7 @@ export default function MeasurementEditModal({
   isOpen,
   measurements,
   onSave,
-  onClose
+  onClose,
 }: MeasurementEditModalProps) {
   const [editedMeasurements, setEditedMeasurements] = useState<BodyMeasurements>(measurements);
   const [hasChanges, setHasChanges] = useState(false);
@@ -109,6 +115,17 @@ export default function MeasurementEditModal({
       setHasChanges(false);
     }
   }, [isOpen, measurements]);
+
+  // Lock body scroll when modal is open
+  useEffect(() => {
+    if (isOpen) {
+      const original = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = original;
+      };
+    }
+  }, [isOpen]);
 
   const handleMeasurementChange = (key: MeasurementKey, value: number) => {
     setEditedMeasurements((prev) => ({ ...prev, [key]: value }));
@@ -123,32 +140,50 @@ export default function MeasurementEditModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
       {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+      <button
+        aria-label="Cerrar"
         onClick={onClose}
+        className="absolute inset-0 bg-black/85 backdrop-blur-md cursor-default"
       />
 
       {/* Modal */}
-      <div className="relative bg-zinc-900 rounded-2xl border border-zinc-800 w-full max-w-md max-h-[90vh] overflow-hidden">
+      <div
+        className="relative w-full max-w-lg max-h-[92vh] flex flex-col rounded-2xl overflow-hidden"
+        style={{
+          background: 'rgba(15, 15, 18, 0.95)',
+          backdropFilter: 'blur(20px)',
+          WebkitBackdropFilter: 'blur(20px)',
+          border: '1px solid rgba(255,255,255,0.08)',
+        }}
+      >
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-zinc-800">
-          <h2 className="text-lg font-semibold text-white">Editar Medidas</h2>
+        <div className="flex items-end justify-between p-6 pb-5 border-b border-white/8">
+          <div>
+            <span className="text-[10px] font-mono text-white/40 uppercase tracking-widest">
+              Ajuste manual
+            </span>
+            <h2 className="text-2xl font-display text-white mt-2 leading-none">
+              Editar medidas
+            </h2>
+          </div>
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-lg hover:bg-zinc-800 flex items-center justify-center text-zinc-400 hover:text-white transition-colors"
+            aria-label="Cerrar"
+            className="w-9 h-9 rounded-full border border-white/10 hover:border-white/30 hover:bg-white/5 flex items-center justify-center text-white/60 hover:text-white transition-colors"
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
         </div>
 
         {/* Content */}
-        <div className="p-4 space-y-4 overflow-y-auto max-h-[60vh]">
-          <p className="text-zinc-400 text-sm">
-            Ajusta las medidas manualmente si conoces tus medidas exactas o deseas hacer correcciones.
+        <div className="px-6 py-2 overflow-y-auto flex-1">
+          <p className="text-[12.5px] text-white/45 leading-relaxed py-4">
+            Si conoces tus medidas exactas, ajústalas aquí. El cambio se reflejará
+            inmediatamente en las tallas sugeridas.
           </p>
 
           {MEASUREMENT_CONFIG.map(({ key, label, min, max, step }) => (
@@ -165,23 +200,23 @@ export default function MeasurementEditModal({
         </div>
 
         {/* Footer */}
-        <div className="flex gap-3 p-4 border-t border-zinc-800">
+        <div className="flex gap-3 p-6 pt-5 border-t border-white/8">
           <button
             onClick={onClose}
-            className="flex-1 h-12 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white font-medium transition-colors"
+            className="flex-1 h-12 rounded-full border border-white/15 text-white/70 hover:bg-white/5 hover:text-white text-[13px] font-medium transition-colors"
           >
             Cancelar
           </button>
           <button
             onClick={handleSave}
             disabled={!hasChanges}
-            className={`flex-1 h-12 rounded-xl font-medium transition-colors ${
+            className={`flex-1 h-12 rounded-full text-[13px] font-medium transition-colors ${
               hasChanges
-                ? 'bg-indigo-500 hover:bg-indigo-600 text-white'
-                : 'bg-zinc-700 text-zinc-500 cursor-not-allowed'
+                ? 'bg-white text-black hover:bg-white/90'
+                : 'bg-white/10 text-white/30 cursor-not-allowed'
             }`}
           >
-            Guardar Cambios
+            Guardar cambios
           </button>
         </div>
       </div>
