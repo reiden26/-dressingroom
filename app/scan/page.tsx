@@ -209,15 +209,17 @@ export default function ScanPage() {
 
       const validation = validateMeasurements(result.measurements, userProfile.height);
 
-      if (validation.valid) {
-        const finalMeasurements = result.measurements;
-        setUserProfile({ ...userProfile, measurements: finalMeasurements });
-        saveMeasurements(finalMeasurements).catch(console.error);
-      }
+      // Always persist the calculated measurements so the user can see / edit them.
+      // Validation warnings/errors are surfaced but never block storage —
+      // otherwise the profile page shows "Sin medidas todavía" even after a
+      // successful capture, which is confusing for the user.
+      const finalMeasurements = result.measurements;
+      setUserProfile({ ...userProfile, measurements: finalMeasurements });
+      saveMeasurements(finalMeasurements).catch(console.error);
 
       setAnalysisResult({
         measurements: result.measurements,
-        warnings: validation.warnings,
+        warnings: [...validation.warnings, ...validation.errors],
       });
     }
 

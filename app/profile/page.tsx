@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import Navbar from '@/components/layout/Navbar';
 import MeasurementsReveal from '@/components/scan/MeasurementsReveal';
 import SizeRecommendation from '@/components/scan/SizeRecommendation';
 import MeasurementEditModal from '@/components/scan/MeasurementEditModal';
@@ -71,32 +72,7 @@ export default function ProfilePage() {
       {!showProcessing && (
         <main className="min-h-screen bg-black pb-32">
           {/* Top nav */}
-          <nav className="fixed top-0 left-0 right-0 z-40 px-4 pt-4">
-            <div
-              className="mx-auto max-w-3xl flex items-center justify-between px-6 py-4 rounded-2xl"
-              style={{
-                background: 'rgba(255,255,255,0.06)',
-                backdropFilter: 'blur(12px)',
-                WebkitBackdropFilter: 'blur(12px)',
-                border: '1px solid rgba(255,255,255,0.1)',
-              }}
-            >
-              <Link href="/" className="text-[17px] font-semibold text-white">
-                <span className="text-sky-400">VFR</span>
-              </Link>
-              <div className="hidden md:flex items-center gap-5">
-                <Link href="/info" className="text-[13px] text-white/60 hover:text-white transition-colors font-medium">
-                  Información
-                </Link>
-                <Link href="/fitting" className="text-[13px] text-white/60 hover:text-white transition-colors font-medium">
-                  Catalogo
-                </Link>
-                <Link href="/scan" className="text-[13px] text-white/60 hover:text-white transition-colors font-medium">
-                  Escanear
-                </Link>
-              </div>
-            </div>
-          </nav>
+          <Navbar />
 
           <div className="max-w-[1100px] mx-auto px-6 lg:px-12 pt-32 lg:pt-40">
             {/* Hero / Header */}
