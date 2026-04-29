@@ -1,13 +1,13 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { v4 as uuidv4 } from 'uuid';
 import CameraFeed, { type CameraFeedRef, type CameraStatus } from '@/components/camera/CameraFeed';
 import Navbar from '@/components/layout/Navbar';
 import { useAppStore } from '@/store/useAppStore';
 import { POSES } from '@/lib/constants';
-import { savePose, saveProfile, saveMeasurements } from '@/lib/storage';
+import { savePose, saveProfile, saveMeasurements, getAllPoses } from '@/lib/storage';
 import { calculateMeasurements } from '@/lib/measurementCalculator';
 import { validateMeasurements } from '@/lib/anatomicalValidation';
 import type { CapturedPose, BodyMeasurements } from '@/lib/types';
@@ -24,19 +24,48 @@ export default function ScanPage() {
 
   const [currentPoseIndex, setCurrentPoseIndex] = useState(0);
 
-  // Initialise from any persisted profile so a soft remount (StrictMode,
-  // preview-iframe reload, navigation back, etc.) doesn't kick the user
-  // back to step 1 after they've already entered their data.
-  const persistedProfile = useAppStore.getState().userProfile;
-  const [height, setHeight] = useState<number>(persistedProfile?.height ?? 0);
-  const [heightInput, setHeightInput] = useState(
-    persistedProfile?.height ? String(persistedProfile.height) : ''
+  // Subscribe to the persisted store reactively. `useAppStore.getState()` at
+  // render time runs BEFORE Zustand's persist middleware has hydrated from
+  // localStorage on the client, so seeding useState from getState() reads
+  // null and locks the page on step 1 even when a profile exists. Reading
+  // via the hook + a hydration flag fixes that.
+  const userProfile = useAppStore((s) => s.userProfile);
+  const setUserProfile = useAppStore((s) => s.setUserProfile);
+  const addCapturedPose = useAppStore((s) => s.addCapturedPose);
+
+  const [hydrated, setHydrated] = useState(() =>
+    typeof window !== 'undefined' && useAppStore.persist?.hasHydrated?.()
   );
-  const [weight, setWeight] = useState<number>(persistedProfile?.weight ?? 0);
-  const [weightInput, setWeightInput] = useState(
-    persistedProfile?.weight ? String(persistedProfile.weight) : ''
-  );
-  const [profileEntered, setProfileEntered] = useState(!!persistedProfile);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (useAppStore.persist?.hasHydrated?.()) {
+      setHydrated(true);
+      return;
+    }
+    const unsub = useAppStore.persist?.onFinishHydration?.(() => setHydrated(true));
+    return () => {
+      unsub?.();
+    };
+  }, []);
+
+  const [height, setHeight] = useState<number>(0);
+  const [heightInput, setHeightInput] = useState('');
+  const [weight, setWeight] = useState<number>(0);
+  const [weightInput, setWeightInput] = useState('');
+
+  // Once persist hydrates, mirror the persisted profile into the local form
+  // inputs so that if the user later goes back to step 1 (e.g. after a full
+  // reset) the form still reflects what we know about them.
+  useEffect(() => {
+    if (!userProfile) return;
+    setHeight(userProfile.height);
+    setHeightInput(String(userProfile.height));
+    setWeight(userProfile.weight);
+    setWeightInput(String(userProfile.weight));
+  }, [userProfile]);
+
+  // Profile is "entered" whenever a persisted user profile exists.
+  const profileEntered = !!userProfile;
 
   const [capturedImages, setCapturedImages] = useState<Record<PoseType, string | null>>({
     front: null,
@@ -48,6 +77,42 @@ export default function ScanPage() {
     side: [],
     back: [],
   });
+
+  // Restore in-progress captures from IndexedDB on mount so that any soft
+  // remount of /scan (HMR, preview iframe reload, navigation back) doesn't
+  // wipe the user's already-taken photos.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const stored = await getAllPoses();
+        if (cancelled || stored.length === 0) return;
+        setCapturedImages((prev) => {
+          const next = { ...prev };
+          for (const p of stored) {
+            if (POSE_STEPS.includes(p.poseId as PoseType)) {
+              next[p.poseId as PoseType] = p.imageDataUrl;
+            }
+          }
+          return next;
+        });
+        setCapturedLandmarks((prev) => {
+          const next = { ...prev };
+          for (const p of stored) {
+            if (POSE_STEPS.includes(p.poseId as PoseType)) {
+              next[p.poseId as PoseType] = (p.landmarks as unknown[]) ?? [];
+            }
+          }
+          return next;
+        });
+      } catch (err) {
+        console.error('[v0] Failed to restore poses from IndexedDB', err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [, setAnalysisResult] = useState<{
     measurements: BodyMeasurements;
@@ -61,8 +126,6 @@ export default function ScanPage() {
     detectionState: 'no_person',
     coveragePercent: 0,
   });
-
-  const { setUserProfile, addCapturedPose, userProfile } = useAppStore();
 
   // Stable callback so CameraFeed doesn't re-fire on every render
   const handleStatusChange = useCallback((s: CameraStatus) => {
@@ -177,7 +240,8 @@ export default function ScanPage() {
     };
     setUserProfile(profile);
     saveProfile(profile);
-    setProfileEntered(true);
+    // profileEntered now derives from `!!userProfile` in the store, so the
+    // step transition happens automatically as soon as setUserProfile lands.
   };
 
   const handleAnalyze = useCallback(async () => {
@@ -230,6 +294,20 @@ export default function ScanPage() {
     setIsAnalyzing(false);
     router.push('/profile');
   }, [capturedLandmarks, userProfile, setUserProfile, router]);
+
+  // ─── Hydration gate ──────────────────────────────────────────────────
+  // Wait for Zustand's persist middleware to load the user profile from
+  // localStorage before deciding which step to show. Without this gate the
+  // page flashes step 1 (height/weight) for users that already have a
+  // persisted profile, which on a quick remount looks like the captures
+  // were thrown away.
+  if (!hydrated) {
+    return (
+      <main className="min-h-screen bg-black flex items-center justify-center">
+        <div className="w-10 h-10 border border-white/15 border-t-white rounded-full animate-spin" />
+      </main>
+    );
+  }
 
   // ─── Step 1: Profile entry (height + weight) ──────────────────────────
   if (!profileEntered) {
