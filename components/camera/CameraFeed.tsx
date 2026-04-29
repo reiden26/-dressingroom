@@ -3,35 +3,62 @@
 import { useEffect, useRef, useState, forwardRef, useImperativeHandle } from 'react';
 import { KEY_LANDMARKS } from '@/lib/landmarkNames';
 
+export type DetectionState = 'no_person' | 'too_close' | 'partial' | 'good';
+
+export interface CameraStatus {
+  cameraReady: boolean;
+  modelLoaded: boolean;
+  error: string | null;
+  detectionState: DetectionState;
+  coveragePercent: number;
+}
+
+export type Landmark = { x: number; y: number; z: number; visibility: number };
+
 interface CameraFeedProps {
   className?: string;
+  onStatusChange?: (status: CameraStatus) => void;
 }
 
 export interface CameraFeedRef {
   videoElement: HTMLVideoElement | null;
   canvasElement: HTMLCanvasElement | null;
+  getLandmarks: () => Landmark[] | null;
 }
 
 const CameraFeed = forwardRef<CameraFeedRef, CameraFeedProps>(
-  ({ className = '' }, ref) => {
+  ({ className = '', onStatusChange }, ref) => {
     const videoRef = useRef<HTMLVideoElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [error, setError] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [cameraReady, setCameraReady] = useState(false);
     const [isModelLoaded, setIsModelLoaded] = useState(false);
-    const [detectionState, setDetectionState] = useState<'no_person' | 'too_close' | 'partial' | 'good'>('no_person');
+    const [detectionState, setDetectionState] = useState<DetectionState>('no_person');
     const [coveragePercent, setCoveragePercent] = useState(0);
 
     const streamRef = useRef<MediaStream | null>(null);
     const landmarkerRef = useRef<unknown>(null);
     const rafRef = useRef<number>(0);
     const lastVideoTimeRef = useRef<number>(-1);
+    const latestLandmarksRef = useRef<Landmark[] | null>(null);
 
     useImperativeHandle(ref, () => ({
       videoElement: videoRef.current,
       canvasElement: canvasRef.current,
+      getLandmarks: () => latestLandmarksRef.current,
     }), []);
+
+    // Push status changes upstream
+    useEffect(() => {
+      onStatusChange?.({
+        cameraReady,
+        modelLoaded: isModelLoaded,
+        error,
+        detectionState,
+        coveragePercent,
+      });
+    }, [cameraReady, isModelLoaded, error, detectionState, coveragePercent, onStatusChange]);
 
     // Load model
     useEffect(() => {
@@ -121,6 +148,7 @@ const CameraFeed = forwardRef<CameraFeedRef, CameraFeedProps>(
 
             if (results.landmarks && results.landmarks.length > 0) {
               const landmarks = results.landmarks[0];
+              latestLandmarksRef.current = landmarks;
 
               // Draw skeleton
               drawSkeleton(ctx, landmarks, canvas.width, canvas.height);
@@ -153,6 +181,7 @@ const CameraFeed = forwardRef<CameraFeedRef, CameraFeedProps>(
                 setDetectionState('no_person');
               }
             } else {
+              latestLandmarksRef.current = null;
               setDetectionState('no_person');
               setCoveragePercent(0);
             }

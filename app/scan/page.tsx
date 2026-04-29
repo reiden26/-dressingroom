@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { v4 as uuidv4 } from 'uuid';
-import CameraFeed, { type CameraFeedRef } from '@/components/camera/CameraFeed';
+import CameraFeed, { type CameraFeedRef, type CameraStatus } from '@/components/camera/CameraFeed';
 import Navbar from '@/components/layout/Navbar';
 import { useAppStore } from '@/store/useAppStore';
 import { POSES } from '@/lib/constants';
@@ -46,7 +46,43 @@ export default function ScanPage() {
     warnings: string[];
   } | null>(null);
 
+  const [cameraStatus, setCameraStatus] = useState<CameraStatus>({
+    cameraReady: false,
+    modelLoaded: false,
+    error: null,
+    detectionState: 'no_person',
+    coveragePercent: 0,
+  });
+
   const { setUserProfile, addCapturedPose, clearPoses, userProfile } = useAppStore();
+
+  // Stable callback so CameraFeed doesn't re-fire on every render
+  const handleStatusChange = useCallback((s: CameraStatus) => {
+    setCameraStatus(s);
+  }, []);
+
+  // Capture is only allowed when:
+  // 1. The camera stream is ready (not loading / not errored)
+  // 2. The MediaPipe model has finished loading
+  // 3. A body is actually detected ('partial' or 'good' — not 'no_person' / 'too_close')
+  const canCapture =
+    cameraStatus.cameraReady &&
+    cameraStatus.modelLoaded &&
+    !cameraStatus.error &&
+    (cameraStatus.detectionState === 'good' || cameraStatus.detectionState === 'partial');
+
+  const captureBlockedReason: string | null = (() => {
+    if (cameraStatus.error) return cameraStatus.error;
+    if (!cameraStatus.cameraReady) return 'Iniciando cámara…';
+    if (!cameraStatus.modelLoaded) return 'Cargando detector de pose…';
+    if (cameraStatus.detectionState === 'no_person')
+      return 'No detectamos a nadie. Sitúate frente a la cámara.';
+    if (cameraStatus.detectionState === 'too_close')
+      return 'Estás demasiado cerca. Aléjate para que se vea tu cuerpo.';
+    if (cameraStatus.detectionState === 'partial')
+      return 'Cuerpo parcialmente visible — intenta encuadrarte por completo.';
+    return null;
+  })();
 
   const currentPose = POSES.find((p) => p.id === POSE_STEPS[currentPoseIndex]) || POSES[0];
   const capturedCount = Object.values(capturedImages).filter(Boolean).length;
@@ -63,33 +99,47 @@ export default function ScanPage() {
   }, [clearPoses]);
 
   const handleCapture = useCallback(() => {
+    // Hard guard — never capture when the camera/detector aren't ready
+    // or when no body is detected.
+    if (!canCapture) {
+      console.log('[v0] Capture blocked:', captureBlockedReason);
+      return;
+    }
+
     const poseId = POSE_STEPS[currentPoseIndex];
     const video = cameraRef.current?.videoElement;
+    const landmarks = cameraRef.current?.getLandmarks?.() ?? null;
 
-    if (video) {
-      const tempCanvas = document.createElement('canvas');
-      tempCanvas.width = video.videoWidth;
-      tempCanvas.height = video.videoHeight;
-      const tempCtx = tempCanvas.getContext('2d');
-      if (tempCtx) {
-        tempCtx.scale(-1, 1);
-        tempCtx.drawImage(video, 0, 0, -tempCanvas.width, tempCanvas.height);
-        const dataUrl = tempCanvas.toDataURL('image/jpeg', 0.9);
-
-        setCapturedImages((prev) => ({ ...prev, [poseId]: dataUrl }));
-
-        const pose: CapturedPose = {
-          poseId,
-          imageDataUrl: dataUrl,
-          capturedAt: new Date(),
-          landmarks: [],
-        };
-
-        savePose(pose).catch(console.error);
-        addCapturedPose(pose);
-      }
+    // Extra safety: even though canCapture is true, if landmarks vanished
+    // between the last frame and the click, abort the capture.
+    if (!video || video.readyState < 2 || !landmarks || landmarks.length === 0) {
+      console.log('[v0] Capture aborted — no live frame or landmarks');
+      return;
     }
-  }, [currentPoseIndex, addCapturedPose]);
+
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = video.videoWidth;
+    tempCanvas.height = video.videoHeight;
+    const tempCtx = tempCanvas.getContext('2d');
+    if (!tempCtx) return;
+
+    tempCtx.scale(-1, 1);
+    tempCtx.drawImage(video, 0, 0, -tempCanvas.width, tempCanvas.height);
+    const dataUrl = tempCanvas.toDataURL('image/jpeg', 0.9);
+
+    setCapturedImages((prev) => ({ ...prev, [poseId]: dataUrl }));
+    setCapturedLandmarks((prev) => ({ ...prev, [poseId]: landmarks }));
+
+    const pose: CapturedPose = {
+      poseId,
+      imageDataUrl: dataUrl,
+      capturedAt: new Date(),
+      landmarks,
+    };
+
+    savePose(pose).catch(console.error);
+    addCapturedPose(pose);
+  }, [canCapture, captureBlockedReason, currentPoseIndex, addCapturedPose]);
 
   const handleRetake = useCallback((poseId: PoseType) => {
     setCapturedImages((prev) => ({ ...prev, [poseId]: null }));
@@ -414,7 +464,40 @@ export default function ScanPage() {
 
         {/* Camera viewport */}
         <div className="relative w-full aspect-[3/4] rounded-3xl overflow-hidden border border-white/10 bg-white/[0.02] mb-6">
-          <CameraFeed ref={cameraRef} className="w-full h-full" />
+          <CameraFeed
+            ref={cameraRef}
+            className="w-full h-full"
+            onStatusChange={handleStatusChange}
+          />
+
+          {/* Live status pill in viewport */}
+          {!capturedImages[currentPose.id] && cameraStatus.cameraReady && cameraStatus.modelLoaded && !cameraStatus.error && (
+            <div className="absolute top-3 left-3 z-10">
+              <div
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-[10.5px] font-mono uppercase tracking-widest backdrop-blur-md border ${
+                  cameraStatus.detectionState === 'good'
+                    ? 'bg-emerald-400/15 border-emerald-400/40 text-emerald-200'
+                    : cameraStatus.detectionState === 'partial'
+                    ? 'bg-amber-400/15 border-amber-400/40 text-amber-200'
+                    : 'bg-rose-400/15 border-rose-400/40 text-rose-200'
+                }`}
+              >
+                <span
+                  className={`w-1.5 h-1.5 rounded-full animate-pulse ${
+                    cameraStatus.detectionState === 'good'
+                      ? 'bg-emerald-300'
+                      : cameraStatus.detectionState === 'partial'
+                      ? 'bg-amber-300'
+                      : 'bg-rose-300'
+                  }`}
+                />
+                {cameraStatus.detectionState === 'good' && 'Listo'}
+                {cameraStatus.detectionState === 'partial' && 'Parcial'}
+                {cameraStatus.detectionState === 'too_close' && 'Muy cerca'}
+                {cameraStatus.detectionState === 'no_person' && 'Sin detección'}
+              </div>
+            </div>
+          )}
 
           {/* Captured overlay */}
           {capturedImages[currentPose.id] && (
@@ -444,14 +527,40 @@ export default function ScanPage() {
             <>
               <button
                 onClick={handleCapture}
-                className="group relative w-20 h-20 rounded-full flex items-center justify-center transition-all active:scale-95"
-                aria-label="Capturar foto"
+                disabled={!canCapture}
+                aria-disabled={!canCapture}
+                aria-label={canCapture ? 'Capturar foto' : 'Captura no disponible'}
+                title={captureBlockedReason ?? 'Capturar foto'}
+                className={`group relative w-20 h-20 rounded-full flex items-center justify-center transition-all ${
+                  canCapture ? 'active:scale-95 cursor-pointer' : 'cursor-not-allowed'
+                }`}
               >
-                <span className="absolute inset-0 rounded-full border border-white/30 group-hover:border-white/60 transition-colors" />
-                <span className="absolute inset-2 rounded-full bg-white group-hover:bg-white/90 transition-colors" />
+                <span
+                  className={`absolute inset-0 rounded-full border transition-colors ${
+                    canCapture
+                      ? 'border-white/30 group-hover:border-white/60'
+                      : 'border-white/10'
+                  }`}
+                />
+                <span
+                  className={`absolute inset-2 rounded-full transition-colors ${
+                    canCapture
+                      ? 'bg-white group-hover:bg-white/90'
+                      : 'bg-white/15'
+                  }`}
+                />
+                {!canCapture && (
+                  <svg className="relative z-10 w-5 h-5 text-white/40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  </svg>
+                )}
               </button>
-              <p className="text-[11px] font-mono text-white/40 uppercase tracking-widest">
-                Toca para capturar
+              <p
+                className={`text-[11px] font-mono uppercase tracking-widest text-center max-w-[260px] leading-relaxed ${
+                  canCapture ? 'text-white/40' : 'text-white/50'
+                }`}
+              >
+                {canCapture ? 'Toca para capturar' : captureBlockedReason}
               </p>
             </>
           ) : (
