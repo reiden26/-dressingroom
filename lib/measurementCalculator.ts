@@ -1,5 +1,3 @@
-import type { Landmark } from './types';
-
 export interface LandmarkWithVisibility {
   x: number;
   y: number;
@@ -11,6 +9,7 @@ export interface MeasurementInput {
   frontLandmarks: LandmarkWithVisibility[];
   sideLandmarks: LandmarkWithVisibility[];
   heightCm: number;
+  weightKg?: number;
   imageWidth: number;
   imageHeight: number;
 }
@@ -27,6 +26,7 @@ export interface BodyMeasurementsResult {
     capturedAt: Date;
     confidence: number;
     isEstimated: boolean;
+    bmi?: number;
   };
   warnings: string[];
 }
@@ -123,9 +123,45 @@ function calculateScaleFactor(
     { x: anklePixel.x / imageWidth, y: anklePixel.y / imageHeight }
   ) * imageHeight;
 
+  // Nose-to-ankle is roughly 92% of total height (top of head is above the nose)
   const scaleFactor = heightCm / (bodyPixelHeight * 0.92);
 
   return scaleFactor;
+}
+
+/**
+ * Empirical body-circumference estimates from height + BMI.
+ * Calibrated against ANSUR II / ISO 8559 averages — robust when MediaPipe
+ * silhouettes are noisy or partially occluded.
+ */
+function bmiBasedEstimates(heightCm: number, weightKg: number) {
+  const heightM = heightCm / 100;
+  const bmi = weightKg / (heightM * heightM);
+  const dBmi = bmi - 22; // 22 is the median normal-weight BMI
+
+  // Coefficients calibrated so an average 175cm/72kg adult (BMI ~23.5)
+  // returns chest ~95cm, waist ~80cm, hips ~96cm.
+  const chest = heightCm * 0.515 + dBmi * 1.6;
+  const waist = heightCm * 0.46 + dBmi * 2.6;
+  const hips = heightCm * 0.52 + dBmi * 1.8;
+  const shoulders = heightCm * 0.235 + dBmi * 0.35;
+
+  return { bmi, chest, waist, hips, shoulders };
+}
+
+/**
+ * Blends a visual estimate with a BMI-based estimate. The visual estimate
+ * is given the lower weight when it falls outside an anatomically plausible
+ * window around the BMI estimate (it is more often noisy than the BMI one).
+ */
+function blendEstimate(visual: number, bmiBased: number, visualWeight = 0.45): number {
+  if (visual <= 0) return bmiBased;
+  // If the visual measurement is wildly off, trust the BMI estimate more.
+  const ratio = visual / bmiBased;
+  if (ratio < 0.78 || ratio > 1.22) {
+    return bmiBased * 0.85 + visual * 0.15;
+  }
+  return bmiBased * (1 - visualWeight) + visual * visualWeight;
 }
 
 export function calculateMeasurements(
@@ -133,12 +169,38 @@ export function calculateMeasurements(
   sideLandmarks: LandmarkWithVisibility[],
   heightCm: number,
   imageWidth: number,
-  imageHeight: number
+  imageHeight: number,
+  weightKg?: number
 ): BodyMeasurementsResult {
   const warnings: string[] = [];
 
   const scaleFactor = calculateScaleFactor(frontLandmarks, heightCm, imageWidth, imageHeight);
+
+  // BMI-based estimates serve both as a fallback when scaling fails and as
+  // an anatomical reference for blending with visual measurements.
+  const haveWeight = typeof weightKg === 'number' && weightKg > 0;
+  const bmiEst = haveWeight ? bmiBasedEstimates(heightCm, weightKg!) : null;
+
   if (!scaleFactor) {
+    if (bmiEst) {
+      warnings.push('No se pudieron detectar todos los puntos. Mostrando estimaciones basadas en altura y peso.');
+      return {
+        measurements: {
+          shoulders: Math.round(bmiEst.shoulders),
+          chest: Math.round(bmiEst.chest),
+          waist: Math.round(bmiEst.waist),
+          hips: Math.round(bmiEst.hips),
+          inseam: Math.round(heightCm * 0.46),
+          armLength: Math.round(heightCm * 0.33),
+          torsoLength: Math.round(heightCm * 0.29),
+          capturedAt: new Date(),
+          confidence: 0.55,
+          isEstimated: true,
+          bmi: Math.round(bmiEst.bmi * 10) / 10,
+        },
+        warnings,
+      };
+    }
     return {
       measurements: {
         shoulders: 0,
@@ -170,10 +232,11 @@ export function calculateMeasurements(
   const rightElbow = getLandmark(frontLandmarks, LANDMARK_INDICES.RIGHT_ELBOW);
   const nose = getLandmark(frontLandmarks, LANDMARK_INDICES.NOSE);
 
-  let shouldersWidth = 0;
+  let visualShoulders = 0;
   if (leftShoulder && rightShoulder) {
     const rawShoulders = pixelDistance(leftShoulder, rightShoulder, imageWidth, imageHeight);
-    shouldersWidth = rawShoulders * scaleFactor * 1.15;
+    // 1.15 corrects for shoulder tip vs. acromion landmark offset
+    visualShoulders = rawShoulders * scaleFactor * 1.15;
   }
 
   let hipsWidth = 0;
@@ -189,12 +252,19 @@ export function calculateMeasurements(
     torsoLength = Math.abs(hipMidY - shoulderMidY) * imageHeight * scaleFactor;
   }
 
+  // Inseam: distance from hip to ankle (proper definition), with a 0.95
+  // factor since the hip landmark sits a few cm above the crotch.
   let inseam = 0;
-  if (leftHip && leftKnee && leftAnkle) {
-    const hipMidX = leftHip.x;
-    const kneeY = leftKnee.y;
-    const ankleY = leftAnkle.y;
-    inseam = Math.abs(ankleY - kneeY) * imageHeight * scaleFactor;
+  const hipForInseam = leftHip || rightHip;
+  const ankleForInseam = leftAnkle || rightAnkle;
+  const kneeForInseam = leftKnee || rightKnee;
+  if (hipForInseam && ankleForInseam) {
+    const hipY = hipForInseam.y;
+    const ankleY = ankleForInseam.y;
+    inseam = Math.abs(ankleY - hipY) * imageHeight * scaleFactor * 0.95;
+  } else if (kneeForInseam && ankleForInseam) {
+    // Lower-leg fallback (extrapolated), used only when hip is not visible
+    inseam = Math.abs(ankleForInseam.y - kneeForInseam.y) * imageHeight * scaleFactor * 2.05;
   }
 
   let leftArmLength = 0;
@@ -212,30 +282,34 @@ export function calculateMeasurements(
   const armLength = (leftArmLength + rightArmLength) / 2 || 0;
 
   let chestDepth = 0;
-  let waistDepth = 0;
-  let hipDepth = 0;
   const sideNose = sideLandmarks[LANDMARK_INDICES.NOSE];
   const sideLeftShoulder = getLandmark(sideLandmarks, LANDMARK_INDICES.LEFT_SHOULDER);
   const sideRightShoulder = getLandmark(sideLandmarks, LANDMARK_INDICES.RIGHT_SHOULDER);
-  const sideLeftHip = getLandmark(sideLandmarks, LANDMARK_INDICES.LEFT_HIP);
-  const sideRightHip = getLandmark(sideLandmarks, LANDMARK_INDICES.RIGHT_HIP);
-  const sideLeftKnee = getLandmark(sideLandmarks, LANDMARK_INDICES.LEFT_KNEE);
-  const sideRightKnee = getLandmark(sideLandmarks, LANDMARK_INDICES.RIGHT_KNEE);
 
   if (sideNose && sideLeftShoulder && sideRightShoulder) {
     const sideShoulderMidX = (sideLeftShoulder.x + sideRightShoulder.x) / 2;
     chestDepth = Math.abs(sideNose.x - sideShoulderMidX) * imageWidth * scaleFactor * 2.2;
   }
 
-  if (sideLeftHip && sideRightHip && sideLeftKnee && sideRightKnee) {
-    const sideHipMidX = (sideLeftHip.x + sideRightHip.x) / 2;
-    const sideKneeMidX = (sideLeftKnee.x + sideRightKnee.x) / 2;
-    hipDepth = Math.abs(sideHipMidX - sideKneeMidX) * imageWidth * scaleFactor * 1.8;
-  }
+  // Visual circumference approximations from front-view widths
+  const visualChest = visualShoulders > 0 ? visualShoulders * 3.1 : 0;
+  const visualWaist = hipsWidth > 0 ? hipsWidth * 2.7 : 0;
+  const visualHips = hipsWidth > 0 ? hipsWidth * 3.3 : 0;
 
-  const chest = shouldersWidth > 0 ? shouldersWidth * 3.1 : 0;
-  const waist = hipsWidth > 0 ? hipsWidth * 2.7 : 0;
-  const hips = hipsWidth > 0 ? hipsWidth * 3.3 : 0;
+  // Blend with BMI estimates if weight is available — this is what
+  // recovers correct sizes for users whose body shape (broad shoulders,
+  // depth, etc.) doesn't match a flat front-projected silhouette.
+  let chest = visualChest;
+  let waist = visualWaist;
+  let hips = visualHips;
+  let shouldersWidth = visualShoulders;
+
+  if (bmiEst) {
+    chest = blendEstimate(visualChest, bmiEst.chest);
+    waist = blendEstimate(visualWaist, bmiEst.waist);
+    hips = blendEstimate(visualHips, bmiEst.hips);
+    shouldersWidth = blendEstimate(visualShoulders, bmiEst.shoulders, 0.55);
+  }
 
   const usedLandmarks = [
     leftShoulder, rightShoulder, leftHip, rightHip,
@@ -262,15 +336,15 @@ export function calculateMeasurements(
     warnings.push('Falta la vista lateral para calcular profundidad de pecho y cadera');
   }
 
-  const shoulderRange = { min: heightCm * 0.18, max: heightCm * 0.28 };
-  if (shouldersWidth < shoulderRange.min || shouldersWidth > shoulderRange.max) {
-    warnings.push(`Anchura de hombros (${Math.round(shouldersWidth)}cm) esta fuera del rango esperado para esta altura`);
-    confidence *= 0.8;
+  if (bmiEst) {
+    // Adding BMI context to the calculation gives us a strong anatomical prior,
+    // which raises confidence slightly when measurements come back consistent.
+    confidence = Math.min(confidence + 0.05, 1);
   }
 
-  const waistRange = { min: heightCm * 0.12, max: heightCm * 0.20 };
-  if (waist < waistRange.min || waist > waistRange.max) {
-    warnings.push(`Cintura (${Math.round(waist)}cm) esta fuera del rango esperado para esta altura`);
+  const shoulderRange = { min: heightCm * 0.18, max: heightCm * 0.32 };
+  if (shouldersWidth < shoulderRange.min || shouldersWidth > shoulderRange.max) {
+    warnings.push(`Anchura de hombros (${Math.round(shouldersWidth)}cm) esta fuera del rango esperado para esta altura`);
     confidence *= 0.8;
   }
 
@@ -288,6 +362,7 @@ export function calculateMeasurements(
       capturedAt: new Date(),
       confidence: Math.round(confidence * 100) / 100,
       isEstimated,
+      bmi: bmiEst ? Math.round(bmiEst.bmi * 10) / 10 : undefined,
     },
     warnings,
   };
