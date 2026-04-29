@@ -9,17 +9,41 @@ import SizeRecommendation from '@/components/scan/SizeRecommendation';
 import MeasurementEditModal from '@/components/scan/MeasurementEditModal';
 import ProcessingScreen from '@/components/scan/ProcessingScreen';
 import { useAppStore } from '@/store/useAppStore';
-import { saveMeasurements, saveProfile } from '@/lib/storage';
+import {
+  saveMeasurements,
+  saveProfile,
+  clearAllPoses,
+  clearAllMeasurements,
+} from '@/lib/storage';
 import type { BodyMeasurements } from '@/lib/types';
 
 export default function ProfilePage() {
   const router = useRouter();
-  const { userProfile, capturedPoses, setUserProfile } = useAppStore();
+  const { userProfile, capturedPoses, setUserProfile, clearPoses } = useAppStore();
   const [showProcessing, setShowProcessing] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [localMeasurements, setLocalMeasurements] = useState<BodyMeasurements | null>(null);
+  // Gate the "no profile -> redirect to /scan" effect on persist hydration.
+  // Otherwise a returning user (whose profile lives in localStorage) gets
+  // a flicker-redirect before the persisted state is rehydrated.
+  const [hydrated, setHydrated] = useState(() =>
+    typeof window !== 'undefined' && useAppStore.persist?.hasHydrated?.()
+  );
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (useAppStore.persist?.hasHydrated?.()) {
+      setHydrated(true);
+      return;
+    }
+    const unsub = useAppStore.persist?.onFinishHydration?.(() => setHydrated(true));
+    return () => {
+      unsub?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated) return;
     if (!userProfile) {
       router.push('/scan');
       return;
@@ -27,7 +51,7 @@ export default function ProfilePage() {
     if (userProfile.measurements) {
       setLocalMeasurements(userProfile.measurements);
     }
-  }, [userProfile, router]);
+  }, [hydrated, userProfile, router]);
 
   const handleProcessingComplete = () => {
     setShowProcessing(false);
@@ -43,7 +67,17 @@ export default function ProfilePage() {
     saveMeasurements(newMeasurements);
   };
 
-  const handleRetakeScan = () => {
+  const handleRetakeScan = async () => {
+    // Explicit "start over": wipe persisted profile, captures and saved
+    // measurements so the user re-enters height/weight cleanly. Without
+    // this the persisted profile would auto-skip step 1.
+    setUserProfile(null);
+    clearPoses();
+    try {
+      await Promise.all([clearAllPoses(), clearAllMeasurements()]);
+    } catch (err) {
+      console.error('[v0] Failed clearing previous scan data', err);
+    }
     router.push('/scan');
   };
 

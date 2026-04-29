@@ -1,13 +1,13 @@
 'use client';
 
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { v4 as uuidv4 } from 'uuid';
 import CameraFeed, { type CameraFeedRef, type CameraStatus } from '@/components/camera/CameraFeed';
 import Navbar from '@/components/layout/Navbar';
 import { useAppStore } from '@/store/useAppStore';
 import { POSES } from '@/lib/constants';
-import { savePose, clearAllPoses, saveProfile, saveMeasurements } from '@/lib/storage';
+import { savePose, saveProfile, saveMeasurements } from '@/lib/storage';
 import { calculateMeasurements } from '@/lib/measurementCalculator';
 import { validateMeasurements } from '@/lib/anatomicalValidation';
 import type { CapturedPose, BodyMeasurements } from '@/lib/types';
@@ -24,11 +24,19 @@ export default function ScanPage() {
 
   const [currentPoseIndex, setCurrentPoseIndex] = useState(0);
 
-  const [height, setHeight] = useState<number>(0);
-  const [heightInput, setHeightInput] = useState('');
-  const [weight, setWeight] = useState<number>(0);
-  const [weightInput, setWeightInput] = useState('');
-  const [profileEntered, setProfileEntered] = useState(false);
+  // Initialise from any persisted profile so a soft remount (StrictMode,
+  // preview-iframe reload, navigation back, etc.) doesn't kick the user
+  // back to step 1 after they've already entered their data.
+  const persistedProfile = useAppStore.getState().userProfile;
+  const [height, setHeight] = useState<number>(persistedProfile?.height ?? 0);
+  const [heightInput, setHeightInput] = useState(
+    persistedProfile?.height ? String(persistedProfile.height) : ''
+  );
+  const [weight, setWeight] = useState<number>(persistedProfile?.weight ?? 0);
+  const [weightInput, setWeightInput] = useState(
+    persistedProfile?.weight ? String(persistedProfile.weight) : ''
+  );
+  const [profileEntered, setProfileEntered] = useState(!!persistedProfile);
 
   const [capturedImages, setCapturedImages] = useState<Record<PoseType, string | null>>({
     front: null,
@@ -54,7 +62,7 @@ export default function ScanPage() {
     coveragePercent: 0,
   });
 
-  const { setUserProfile, addCapturedPose, clearPoses, userProfile } = useAppStore();
+  const { setUserProfile, addCapturedPose, userProfile } = useAppStore();
 
   // Stable callback so CameraFeed doesn't re-fire on every render
   const handleStatusChange = useCallback((s: CameraStatus) => {
@@ -88,15 +96,11 @@ export default function ScanPage() {
   const capturedCount = Object.values(capturedImages).filter(Boolean).length;
   const isAllCaptured = capturedCount === 3;
 
-  useEffect(() => {
-    clearAllPoses();
-    clearPoses();
-    setHeight(0);
-    setHeightInput('');
-    setWeight(0);
-    setWeightInput('');
-    setProfileEntered(false);
-  }, [clearPoses]);
+  // Note: previously this effect aggressively cleared every piece of scan
+  // state on mount, which combined with the in-memory zustand store meant
+  // any soft remount of /scan kicked the user back to step 1 and wiped
+  // their captured poses. The reset now only happens via the explicit
+  // "Repetir todo" / "Nuevo escaneo" actions.
 
   const handleCapture = useCallback(() => {
     // Hard guard — never capture when the camera/detector aren't ready

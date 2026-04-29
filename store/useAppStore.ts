@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import type { UserProfile, CapturedPose, GarmentItem, ScanStep } from '@/lib/types';
 
 interface AppState {
@@ -11,41 +12,62 @@ interface AppState {
 }
 
 interface AppActions {
-  setUserProfile: (profile: UserProfile) => void;
+  setUserProfile: (profile: UserProfile | null) => void;
   addCapturedPose: (pose: CapturedPose) => void;
   clearPoses: () => void;
   setCurrentStep: (step: ScanStep) => void;
   selectGarment: (garment: GarmentItem | null) => void;
   addGarmentToCatalog: (garment: GarmentItem) => void;
+  resetAll: () => void;
 }
 
-export const useAppStore = create<AppState & AppActions>((set) => ({
+const initialState: AppState = {
   userProfile: null,
   capturedPoses: [],
   currentStep: 'height',
   isScanning: false,
   garmentCatalog: [],
   selectedGarment: null,
+};
 
-  setUserProfile: (profile) => set({ userProfile: profile }),
+export const useAppStore = create<AppState & AppActions>()(
+  persist(
+    (set) => ({
+      ...initialState,
 
-  addCapturedPose: (pose) =>
-    set((state) => {
-      const existing = state.capturedPoses.findIndex((p) => p.poseId === pose.poseId);
-      if (existing >= 0) {
-        const updated = [...state.capturedPoses];
-        updated[existing] = pose;
-        return { capturedPoses: updated };
-      }
-      return { capturedPoses: [...state.capturedPoses, pose] };
+      setUserProfile: (profile) => set({ userProfile: profile }),
+
+      addCapturedPose: (pose) =>
+        set((state) => {
+          const existing = state.capturedPoses.findIndex((p) => p.poseId === pose.poseId);
+          if (existing >= 0) {
+            const updated = [...state.capturedPoses];
+            updated[existing] = pose;
+            return { capturedPoses: updated };
+          }
+          return { capturedPoses: [...state.capturedPoses, pose] };
+        }),
+
+      clearPoses: () => set({ capturedPoses: [] }),
+
+      setCurrentStep: (step) => set({ currentStep: step }),
+
+      selectGarment: (garment) => set({ selectedGarment: garment }),
+
+      addGarmentToCatalog: (garment) =>
+        set((state) => ({ garmentCatalog: [...state.garmentCatalog, garment] })),
+
+      resetAll: () => set({ ...initialState }),
     }),
-
-  clearPoses: () => set({ capturedPoses: [] }),
-
-  setCurrentStep: (step) => set({ currentStep: step }),
-
-  selectGarment: (garment) => set({ selectedGarment: garment }),
-
-  addGarmentToCatalog: (garment) =>
-    set((state) => ({ garmentCatalog: [...state.garmentCatalog, garment] })),
-}));
+    {
+      name: 'vfr-app-store',
+      storage: createJSONStorage(() => localStorage),
+      // Only persist the user profile. Captured poses contain large base64
+      // image data URLs (and PII) — those live in IndexedDB, not localStorage.
+      // The garment catalog is rebuilt from the static catalogue on each load.
+      partialize: (state) => ({
+        userProfile: state.userProfile,
+      }),
+    }
+  )
+);
