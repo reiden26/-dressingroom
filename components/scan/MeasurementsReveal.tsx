@@ -16,32 +16,28 @@ const MEASUREMENT_LABELS: Record<MeasurementKey, string> = {
   waist: 'Cintura',
   hips: 'Cadera',
   inseam: 'Entrepierna',
-  armLength: 'Brazo',
-  torsoLength: 'Torso',
+  armLength: 'Largo de brazo',
+  torsoLength: 'Largo de torso',
 };
 
-const MEASUREMENT_ICONS: Record<MeasurementKey, string> = {
-  shoulders: 'M12 4C14 4 16 5 16 7V9C16 11 14 13 12 13C10 13 8 11 8 9V7C8 5 10 4 12 4',
-  chest: 'M8 10C6 10 4 12 4 14V16C4 18 6 19 8 19H16C18 19 20 18 20 16V14C20 12 18 10 16 10',
-  waist: 'M9 13C7 13 5 15 5 17V19C5 20 6 21 7 21H17C18 21 19 20 19 19V17C19 15 17 13 15 13',
-  hips: 'M7 18C5 18 4 19.5 4 21V23H20V21C20 19.5 19 18 17 18',
-  inseam: 'M12 13V23M12 23L9 28M12 23L15 28',
-  armLength: 'M4 8L12 12L20 8M12 12V18',
-  torsoLength: 'M12 5V15M8 5H16',
-};
+const MEASUREMENT_ORDER: MeasurementKey[] = [
+  'shoulders',
+  'chest',
+  'waist',
+  'hips',
+  'torsoLength',
+  'armLength',
+  'inseam',
+];
 
 function MeasurementRow({
   label,
   value,
-  icon,
   delay,
-  unit = 'cm'
 }: {
   label: string;
   value: number;
-  icon: string;
   delay: number;
-  unit?: string;
 }) {
   const [visible, setVisible] = useState(false);
 
@@ -52,22 +48,19 @@ function MeasurementRow({
 
   return (
     <div
-      className={`flex items-center gap-4 py-3 border-b border-zinc-800 last:border-0 transition-all duration-500 ${
-        visible ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-4'
+      className={`flex items-baseline justify-between py-4 border-b border-white/8 transition-all duration-700 ${
+        visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'
       }`}
     >
-      <div className="w-10 h-10 rounded-xl bg-indigo-500/10 flex items-center justify-center flex-shrink-0">
-        <svg className="w-5 h-5 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-          <path d={icon} strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      </div>
-      <div className="flex-1">
-        <p className="text-zinc-400 text-sm">{label}</p>
-      </div>
-      <div className="flex items-center gap-2">
-        <span className="text-white font-mono text-lg">{value.toFixed(1)}</span>
-        <span className="text-zinc-500 text-sm">{unit}</span>
-      </div>
+      <span className="text-[13px] text-white/55 font-mono uppercase tracking-wider">
+        {label}
+      </span>
+      <span className="flex items-baseline gap-1.5">
+        <span className="text-3xl md:text-[34px] font-display text-white tabular-nums leading-none">
+          {value.toFixed(0)}
+        </span>
+        <span className="text-[11px] font-mono text-white/35">cm</span>
+      </span>
     </div>
   );
 }
@@ -77,135 +70,228 @@ export default function MeasurementsReveal({ measurements, onEdit }: Measurement
   const [confidenceBar, setConfidenceBar] = useState(0);
 
   useEffect(() => {
-    setTimeout(() => setSilhouetteVisible(true), 300);
-    setTimeout(() => setConfidenceBar(measurements.confidence * 100), 800);
+    const t1 = setTimeout(() => setSilhouetteVisible(true), 200);
+    const t2 = setTimeout(() => setConfidenceBar(measurements.confidence * 100), 700);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
   }, [measurements.confidence]);
 
-  const measurementEntries = Object.entries(MEASUREMENT_LABELS) as [MeasurementKey, string][];
+  const confidence = Math.round(measurements.confidence * 100);
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold text-white">Tus Medidas</h3>
+    <section className="relative">
+      <div className="flex items-end justify-between mb-10">
+        <div>
+          <span className="text-[11px] font-mono text-white/40 uppercase tracking-widest">
+            Sección 01 — Medidas corporales
+          </span>
+          <h2 className="text-3xl md:text-4xl font-display text-white mt-3 leading-none">
+            Tu cuerpo, <span className="italic text-white/50">mapeado.</span>
+          </h2>
+        </div>
         <button
           onClick={onEdit}
-          className="text-indigo-400 text-sm hover:text-indigo-300 flex items-center gap-1"
+          className="hidden sm:inline-flex items-center gap-1.5 text-[12px] text-white/50 hover:text-white transition-colors group"
         >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
           </svg>
           Editar
         </button>
       </div>
 
-      <div className="flex gap-6">
-        {/* SVG Silhouette */}
+      <div className="grid lg:grid-cols-12 gap-12 items-start">
+        {/* Silhouette */}
         <div
-          className={`w-32 flex-shrink-0 transition-all duration-700 ${
-            silhouetteVisible ? 'opacity-100 scale-100' : 'opacity-0 scale-90'
+          className={`lg:col-span-5 transition-all duration-1000 ease-out ${
+            silhouetteVisible ? 'opacity-100' : 'opacity-0 translate-y-4'
           }`}
         >
-          <svg viewBox="0 0 100 180" className="w-full">
-            {/* Body silhouette */}
-            <path
-              d="M50 5
-                 C55 5 58 8 58 13
-                 L58 20
-                 C65 22 75 25 78 35
-                 L82 45
-                 C83 48 82 52 80 55
-                 L75 60
-                 C78 65 80 72 78 80
-                 L72 95
-                 C70 100 68 102 65 105
-                 L60 108
-                 L60 140
-                 L70 175
-                 L65 178
-                 L55 145
-                 L55 178
-                 L50 178
-                 L50 145
-                 L45 178
-                 L40 178
-                 L45 145
-                 L40 108
-                 L35 105
-                 C32 102 30 100 28 95
-                 L22 80
-                 C20 72 22 65 25 60
-                 L20 55
-                 C18 52 17 48 18 45
-                 L22 35
-                 C25 25 35 22 42 20
-                 L42 13
-                 C42 8 45 5 50 5Z"
-              fill="url(#silhouetteGradient)"
-              stroke="url(#silhouetteStroke)"
-              strokeWidth="0.5"
-              className="transition-all duration-500"
-            />
+          <div className="relative aspect-[3/5] max-w-[300px] mx-auto">
+            <svg viewBox="0 0 200 320" className="w-full h-full" aria-hidden="true">
+              <defs>
+                <linearGradient id="silhouette-fill" x1="0%" y1="0%" x2="0%" y2="100%">
+                  <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.18" />
+                  <stop offset="100%" stopColor="#38bdf8" stopOpacity="0.04" />
+                </linearGradient>
+                <linearGradient id="silhouette-stroke" x1="0%" y1="0%" x2="0%" y2="100%">
+                  <stop offset="0%" stopColor="rgba(255,255,255,0.65)" />
+                  <stop offset="100%" stopColor="rgba(255,255,255,0.18)" />
+                </linearGradient>
+              </defs>
 
-            {/* Measurement lines */}
-            <g className="transition-all duration-500" style={{ transitionDelay: '400ms' }}>
-              {/* Shoulders */}
-              <line x1="22" y1="32" x2="78" y2="32" stroke="#6366F1" strokeWidth="1" strokeDasharray="2,2" opacity="0.6" />
-              <text x="50" y="28" textAnchor="middle" fill="#6366F1" fontSize="6" className="opacity-0 animate-fade-in">Hombros</text>
+              {/* Subtle frame */}
+              <rect x="1" y="1" width="198" height="318" fill="none" stroke="rgba(255,255,255,0.06)" />
 
-              {/* Chest */}
-              <line x1="24" y1="48" x2="76" y2="48" stroke="#6366F1" strokeWidth="1" strokeDasharray="2,2" opacity="0.6" />
-
-              {/* Waist */}
-              <line x1="28" y1="65" x2="72" y2="65" stroke="#6366F1" strokeWidth="1" strokeDasharray="2,2" opacity="0.6" />
-
-              {/* Hips */}
-              <line x1="28" y1="85" x2="72" y2="85" stroke="#6366F1" strokeWidth="1" strokeDasharray="2,2" opacity="0.6" />
-            </g>
-
-            <defs>
-              <linearGradient id="silhouetteGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-                <stop offset="0%" stopColor="#6366F1" stopOpacity="0.2" />
-                <stop offset="100%" stopColor="#6366F1" stopOpacity="0.05" />
-              </linearGradient>
-              <linearGradient id="silhouetteStroke" x1="0%" y1="0%" x2="0%" y2="100%">
-                <stop offset="0%" stopColor="#6366F1" stopOpacity="0.8" />
-                <stop offset="100%" stopColor="#6366F1" stopOpacity="0.3" />
-              </linearGradient>
-            </defs>
-          </svg>
-        </div>
-
-        {/* Measurements List */}
-        <div className="flex-1 space-y-1">
-          {measurementEntries.map(([key, label], index) => {
-            const value = measurements[key];
-            if (typeof value !== 'number' || value === 0) return null;
-            return (
-              <MeasurementRow
-                key={key}
-                label={label}
-                value={value}
-                icon={MEASUREMENT_ICONS[key]}
-                delay={500 + index * 100}
+              {/* Body silhouette - properly proportioned standing figure */}
+              <path
+                d="M100 18
+                   c8 0 13 6 13 14
+                   v10
+                   c0 4 -1 6 -3 8
+                   l8 6
+                   c10 7 16 16 18 28
+                   l4 22
+                   c1 5 -1 9 -5 11
+                   l-7 4
+                   c4 8 6 16 5 24
+                   l-3 26
+                   c-1 7 -3 12 -6 16
+                   l-3 4
+                   v8
+                   l-4 30
+                   l3 60
+                   l5 30
+                   l-2 4
+                   l-9 -2
+                   l-6 -32
+                   l-2 -32
+                   l-3 32
+                   l-4 32
+                   l-9 2
+                   l-2 -4
+                   l5 -30
+                   l3 -60
+                   l-4 -30
+                   v-8
+                   l-3 -4
+                   c-3 -4 -5 -9 -6 -16
+                   l-3 -26
+                   c-1 -8 1 -16 5 -24
+                   l-7 -4
+                   c-4 -2 -6 -6 -5 -11
+                   l4 -22
+                   c2 -12 8 -21 18 -28
+                   l8 -6
+                   c-2 -2 -3 -4 -3 -8
+                   v-10
+                   c0 -8 5 -14 13 -14 z"
+                fill="url(#silhouette-fill)"
+                stroke="url(#silhouette-stroke)"
+                strokeWidth="0.8"
               />
-            );
-          })}
-        </div>
-      </div>
 
-      {/* Confidence indicator */}
-      <div className="mt-4">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-sm text-zinc-400">Confianza del escaneo</span>
-          <span className="text-sm font-mono text-indigo-400">{measurements.confidence.toFixed(0)}%</span>
+              {/* Measurement guide lines */}
+              <g stroke="#38bdf8" strokeWidth="0.6" strokeDasharray="3 3" opacity="0.55">
+                {/* Shoulders */}
+                <line x1="58" y1="60" x2="142" y2="60" />
+                {/* Chest */}
+                <line x1="56" y1="92" x2="144" y2="92" />
+                {/* Waist */}
+                <line x1="68" y1="125" x2="132" y2="125" />
+                {/* Hips */}
+                <line x1="62" y1="158" x2="138" y2="158" />
+                {/* Knee height */}
+                <line x1="78" y1="225" x2="122" y2="225" />
+              </g>
+
+              {/* Tick markers and labels */}
+              <g fill="rgba(255,255,255,0.5)" fontSize="6.5" fontFamily="monospace">
+                <text x="148" y="62">hombros</text>
+                <text x="148" y="94">pecho</text>
+                <text x="138" y="127">cintura</text>
+                <text x="142" y="160">cadera</text>
+                <text x="126" y="227">entrepierna</text>
+              </g>
+
+              {/* Bracket marks at line ends */}
+              <g stroke="rgba(56,189,248,0.7)" strokeWidth="1">
+                {[
+                  [58, 60], [142, 60],
+                  [56, 92], [144, 92],
+                  [68, 125], [132, 125],
+                  [62, 158], [138, 158],
+                ].map(([cx, cy], i) => (
+                  <line key={i} x1={cx} y1={(cy as number) - 2} x2={cx} y2={(cy as number) + 2} />
+                ))}
+              </g>
+            </svg>
+          </div>
+
+          {/* BMI block (only when available) */}
+          {typeof measurements.bmi === 'number' && (
+            <div className="mt-6 max-w-[300px] mx-auto">
+              <div className="border-t border-white/10 pt-4 flex items-baseline justify-between">
+                <span className="text-[11px] font-mono text-white/40 uppercase tracking-widest">
+                  Índice corporal
+                </span>
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-2xl font-display text-white tabular-nums">
+                    {measurements.bmi.toFixed(1)}
+                  </span>
+                  <span className="text-[10px] font-mono text-white/30 uppercase">bmi</span>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
-        <div className="h-2 bg-zinc-800 rounded-full overflow-hidden">
-          <div
-            className="h-full bg-gradient-to-r from-indigo-500 to-indigo-400 rounded-full transition-all duration-1000 ease-out"
-            style={{ width: `${confidenceBar}%` }}
-          />
+
+        {/* Measurements list */}
+        <div className="lg:col-span-7">
+          <div>
+            {MEASUREMENT_ORDER.map((key, index) => {
+              const value = measurements[key];
+              if (typeof value !== 'number' || value === 0) return null;
+              return (
+                <MeasurementRow
+                  key={key}
+                  label={MEASUREMENT_LABELS[key]}
+                  value={value}
+                  delay={300 + index * 80}
+                />
+              );
+            })}
+          </div>
+
+          {/* Confidence */}
+          <div className="mt-10 pt-6 border-t border-white/10">
+            <div className="flex items-baseline justify-between mb-3">
+              <span className="text-[11px] font-mono text-white/40 uppercase tracking-widest">
+                Confianza del escaneo
+              </span>
+              <span className="text-[15px] font-mono text-white tabular-nums">
+                {confidence}<span className="text-white/30">%</span>
+              </span>
+            </div>
+            <div className="h-px bg-white/10 relative overflow-hidden">
+              <div
+                className="absolute inset-y-0 left-0 bg-white transition-all ease-out"
+                style={{ width: `${confidenceBar}%`, height: '1px', transitionDuration: '1500ms' }}
+              />
+              <div
+                className="absolute inset-y-[-1px] left-0 transition-all ease-out"
+                style={{
+                  width: `${confidenceBar}%`,
+                  background: 'linear-gradient(to right, rgba(56,189,248,0), rgba(56,189,248,0.6))',
+                  height: '3px',
+                  top: '-1px',
+                  transitionDuration: '1500ms',
+                }}
+              />
+            </div>
+            <p className="text-[11px] text-white/35 leading-relaxed mt-3">
+              {confidence >= 75
+                ? 'Calibración excelente — las medidas son fiables.'
+                : confidence >= 55
+                ? 'Calibración adecuada — recomendamos repetir la pose lateral si quieres más precisión.'
+                : 'Calibración baja — repite el escaneo en un espacio mejor iluminado para mayor precisión.'}
+            </p>
+          </div>
+
+          {/* Mobile edit button */}
+          <button
+            onClick={onEdit}
+            className="sm:hidden mt-6 inline-flex items-center gap-1.5 text-[12px] text-white/50 hover:text-white transition-colors"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+            </svg>
+            Editar medidas
+          </button>
         </div>
       </div>
-    </div>
+    </section>
   );
 }

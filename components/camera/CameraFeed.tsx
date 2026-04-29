@@ -50,12 +50,13 @@ const CameraFeed = forwardRef<CameraFeedRef, CameraFeedProps>(
             runningMode: 'VIDEO',
             numPoses: 1,
             baseOptions: {
-              modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',
+              // 'full' has substantially better leg / foot tracking than 'lite'
+              modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task',
               delegate: 'GPU',
             },
-            minPoseDetectionConfidence: 0.3,
-            minPosePresenceConfidence: 0.3,
-            minTrackingConfidence: 0.3,
+            minPoseDetectionConfidence: 0.4,
+            minPosePresenceConfidence: 0.4,
+            minTrackingConfidence: 0.4,
           });
 
           if (!cancelled) {
@@ -125,16 +126,25 @@ const CameraFeed = forwardRef<CameraFeedRef, CameraFeedProps>(
               drawSkeleton(ctx, landmarks, canvas.width, canvas.height);
 
               // Update detection state
-              const visible = landmarks.filter(l => (l.visibility ?? 0) > 0.5);
+              const visible = landmarks.filter(l => (l.visibility ?? 0) > 0.4);
               const coverage = Math.round((visible.length / 33) * 100);
               setCoveragePercent(coverage);
 
               const leftAnkle = landmarks[KEY_LANDMARKS.LEFT_ANKLE];
               const rightAnkle = landmarks[KEY_LANDMARKS.RIGHT_ANKLE];
+              const leftKnee = landmarks[KEY_LANDMARKS.LEFT_KNEE];
+              const rightKnee = landmarks[KEY_LANDMARKS.RIGHT_KNEE];
               const nose = landmarks[KEY_LANDMARKS.NOSE];
 
-              if ((leftAnkle?.visibility ?? 0) > 0.3 || (rightAnkle?.visibility ?? 0) > 0.3) {
-                setDetectionState(visible.length >= 20 ? 'good' : 'partial');
+              const ankleVisible =
+                (leftAnkle?.visibility ?? 0) > 0.25 || (rightAnkle?.visibility ?? 0) > 0.25;
+              const kneeVisible =
+                (leftKnee?.visibility ?? 0) > 0.3 || (rightKnee?.visibility ?? 0) > 0.3;
+
+              if (ankleVisible) {
+                setDetectionState(visible.length >= 18 ? 'good' : 'partial');
+              } else if (kneeVisible) {
+                setDetectionState('partial');
               } else if ((nose?.visibility ?? 0) > 0.5) {
                 setDetectionState('too_close');
               } else if (visible.length >= 8) {
@@ -278,45 +288,87 @@ function drawSkeleton(
   width: number,
   height: number
 ) {
-  const POSE_CONNECTIONS: [number, number][] = [
-    [11, 12], [11, 13], [13, 15], [12, 14], [14, 16],
-    [11, 23], [12, 24], [23, 24], [23, 25], [25, 27],
-    [24, 26], [26, 28],
+  // Group connections by body region so we can color them differently
+  // and use a lower visibility threshold for legs (which are frequently
+  // partially occluded by the lower edge of the frame).
+  const TORSO: [number, number][] = [
+    [11, 12], // shoulders
+    [11, 23], // left torso
+    [12, 24], // right torso
+    [23, 24], // hips
+  ];
+  const ARMS: [number, number][] = [
+    [11, 13], [13, 15], // left arm
+    [12, 14], [14, 16], // right arm
+  ];
+  const LEGS: [number, number][] = [
+    [23, 25], [25, 27], [27, 29], [27, 31], [29, 31], // left leg + foot
+    [24, 26], [26, 28], [28, 30], [28, 32], [30, 32], // right leg + foot
   ];
 
-  ctx.strokeStyle = '#00FF88';
-  ctx.lineWidth = 2;
+  const drawGroup = (
+    pairs: [number, number][],
+    color: string,
+    lineWidth: number,
+    minVis: number
+  ) => {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = lineWidth;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    pairs.forEach(([start, end]) => {
+      const s = landmarks[start];
+      const e = landmarks[end];
+      if (s && e && (s.visibility ?? 0) > minVis && (e.visibility ?? 0) > minVis) {
+        ctx.beginPath();
+        ctx.moveTo(s.x * width, s.y * height);
+        ctx.lineTo(e.x * width, e.y * height);
+        ctx.stroke();
+      }
+    });
+  };
 
-  POSE_CONNECTIONS.forEach(([start, end]) => {
-    const s = landmarks[start];
-    const e = landmarks[end];
-    if (s && e && (s.visibility ?? 0) > 0.5 && (e.visibility ?? 0) > 0.5) {
-      ctx.beginPath();
-      ctx.moveTo(s.x * width, s.y * height);
-      ctx.lineTo(e.x * width, e.y * height);
-      ctx.stroke();
-    }
-  });
+  // Torso: bold, primary accent
+  drawGroup(TORSO, 'rgba(56, 189, 248, 0.95)', 3, 0.4);
+  // Arms: medium
+  drawGroup(ARMS, 'rgba(56, 189, 248, 0.75)', 2.5, 0.4);
+  // Legs: lower visibility threshold, slightly thinner
+  drawGroup(LEGS, 'rgba(56, 189, 248, 0.75)', 2.5, 0.3);
 
-  ctx.fillStyle = '#FF3366';
-  const keyPoints = [0, 11, 12, 23, 24, 27, 28, 15, 16];
-  keyPoints.forEach((idx) => {
+  // Joints
+  const drawJoint = (idx: number, radius: number, fill: string, stroke: string, minVis: number) => {
     const lm = landmarks[idx];
-    if (lm && (lm.visibility ?? 0) > 0.5) {
-      ctx.beginPath();
-      ctx.arc(lm.x * width, lm.y * height, idx === 0 ? 8 : 5, 0, 2 * Math.PI);
-      ctx.fill();
-    }
-  });
+    if (!lm || (lm.visibility ?? 0) <= minVis) return;
+    ctx.beginPath();
+    ctx.arc(lm.x * width, lm.y * height, radius, 0, 2 * Math.PI);
+    ctx.fillStyle = fill;
+    ctx.fill();
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  };
 
-  ctx.fillStyle = '#FFFFFF';
-  landmarks.forEach((lm, idx) => {
-    if ((lm.visibility ?? 0) > 0.5 && !keyPoints.includes(idx)) {
-      ctx.beginPath();
-      ctx.arc(lm.x * width, lm.y * height, 2, 0, 2 * Math.PI);
-      ctx.fill();
-    }
-  });
+  // Major joints — sky accent with white outline
+  const KEY_JOINTS = [11, 12, 23, 24, 25, 26, 27, 28];
+  KEY_JOINTS.forEach((idx) => drawJoint(idx, 5, '#38bdf8', 'rgba(255,255,255,0.9)', 0.3));
+
+  // Hands and elbows — smaller
+  [13, 14, 15, 16].forEach((idx) => drawJoint(idx, 4, '#38bdf8', 'rgba(255,255,255,0.9)', 0.4));
+
+  // Feet
+  [29, 30, 31, 32].forEach((idx) => drawJoint(idx, 3.5, '#38bdf8', 'rgba(255,255,255,0.85)', 0.25));
+
+  // Face anchor
+  const nose = landmarks[0];
+  if (nose && (nose.visibility ?? 0) > 0.5) {
+    ctx.beginPath();
+    ctx.arc(nose.x * width, nose.y * height, 7, 0, 2 * Math.PI);
+    ctx.fillStyle = 'rgba(236, 168, 214, 0.9)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.95)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
 }
 
 export default CameraFeed;

@@ -1,6 +1,7 @@
 export interface UserProfile {
   id: string;
   height: number;
+  weight: number;
   createdAt: Date;
   measurements?: BodyMeasurements;
 }
@@ -15,6 +16,8 @@ export interface BodyMeasurements {
   torsoLength: number;
   capturedAt: Date;
   confidence: number;
+  /** BMI used at calculation time (height/weight derived) */
+  bmi?: number;
 }
 
 export interface CapturedPose {
