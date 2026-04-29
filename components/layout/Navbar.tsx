@@ -29,13 +29,13 @@ export default function Navbar() {
         </Link>
         <div className="flex items-center gap-5">
           {navItems.map((item) => {
-            const isActive = pathname === item.href;
+            const active = pathname === item.href || (item.href !== '/' && pathname?.startsWith(item.href));
             return (
               <Link
                 key={item.href}
                 href={item.href}
                 className={`text-[13px] font-medium transition-colors ${
-                  isActive ? 'text-white' : 'text-white/60 hover:text-white'
+                  active ? 'text-white' : 'text-white/60 hover:text-white'
                 }`}
               >
                 {item.label}
