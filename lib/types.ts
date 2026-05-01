@@ -1,7 +1,15 @@
+export interface LandmarkWithVisibility {
+  x: number;
+  y: number;
+  z: number;
+  visibility: number;
+}
+
 export interface UserProfile {
   id: string;
   height: number;
   weight: number;
+  gender?: 1 | 1.5 | 2; // 1=Hombre, 2=Mujer, 1.5=Neutro
   createdAt: Date;
   measurements?: BodyMeasurements;
 }
@@ -18,6 +26,13 @@ export interface BodyMeasurements {
   confidence: number;
   /** BMI used at calculation time (height/weight derived) */
   bmi?: number;
+}
+
+export interface BodyMeasurementsResult {
+  measurements: BodyMeasurements & {
+    isEstimated: boolean;
+  };
+  warnings: string[];
 }
 
 export interface CapturedPose {

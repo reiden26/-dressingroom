@@ -52,6 +52,7 @@ export default function ScanPage() {
   const [heightInput, setHeightInput] = useState('');
   const [weight, setWeight] = useState<number>(0);
   const [weightInput, setWeightInput] = useState('');
+  const [gender, setGender] = useState<1 | 1.5 | 2>(1.5); // Default: neutro
 
   // Once persist hydrates, mirror the persisted profile into the local form
   // inputs so that if the user later goes back to step 1 (e.g. after a full
@@ -62,6 +63,9 @@ export default function ScanPage() {
     setHeightInput(String(userProfile.height));
     setWeight(userProfile.weight);
     setWeightInput(String(userProfile.weight));
+    if (userProfile.gender) {
+      setGender(userProfile.gender);
+    }
   }, [userProfile]);
 
   // Profile is "entered" whenever a persisted user profile exists.
@@ -236,6 +240,7 @@ export default function ScanPage() {
       id: uuidv4(),
       height,
       weight,
+      gender,
       createdAt: new Date(),
     };
     setUserProfile(profile);
@@ -272,7 +277,8 @@ export default function ScanPage() {
         userProfile.height,
         IMAGE_WIDTH,
         IMAGE_HEIGHT,
-        userProfile.weight
+        userProfile.weight,
+        userProfile.gender ?? 1.5
       );
 
       const validation = validateMeasurements(result.measurements, userProfile.height);
@@ -388,6 +394,49 @@ export default function ScanPage() {
                   <span className="text-sm font-mono text-white/40">kg</span>
                 </div>
                 <p className="mt-2 text-[11px] font-mono text-white/30">Entre 30 y 250 kg</p>
+              </div>
+
+              {/* Gender */}
+              <div>
+                <label className="block text-xs font-mono text-white/40 uppercase tracking-widest mb-3">
+                  Género
+                </label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setGender(1)}
+                    className={`flex-1 h-11 rounded-full text-sm font-medium transition-all duration-200 border ${
+                      gender === 1
+                        ? 'bg-white text-black border-white'
+                        : 'bg-transparent text-white/60 border-white/15 hover:border-white/30'
+                    }`}
+                  >
+                    Hombre
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setGender(2)}
+                    className={`flex-1 h-11 rounded-full text-sm font-medium transition-all duration-200 border ${
+                      gender === 2
+                        ? 'bg-white text-black border-white'
+                        : 'bg-transparent text-white/60 border-white/15 hover:border-white/30'
+                    }`}
+                  >
+                    Mujer
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setGender(1.5)}
+                    className={`flex-1 h-11 rounded-full text-sm font-medium transition-all duration-200 border ${
+                      gender === 1.5
+                        ? 'bg-white text-black border-white'
+                        : 'bg-transparent text-white/60 border-white/15 hover:border-white/30'
+                    }`}
+                  >
+                    Prefiero no decir
+                  </button>
+                </div>
+                <p className="mt-2 text-[11px] font-mono text-white/30">Opcional — usa coeficientes neutros si no lo seleccionas</p>
               </div>
             </div>
 

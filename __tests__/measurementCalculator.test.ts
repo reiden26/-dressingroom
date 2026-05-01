@@ -1,4 +1,5 @@
-import { calculateMeasurements, euclideanDistance, type LandmarkWithVisibility } from '../lib/measurementCalculator';
+import { calculateMeasurements, euclideanDistance } from '../lib/measurementCalculator';
+import type { LandmarkWithVisibility } from '../lib/types';
 import { validateMeasurements, getSizeRecommendation } from '../lib/anatomicalValidation';
 
 const IMAGE_WIDTH = 720;
@@ -15,7 +16,9 @@ function createTestLandmarks(
   }));
 
   Object.entries(overrides).forEach(([index, value]) => {
-    defaults[parseInt(index)] = value;
+    if (value) {
+      defaults[parseInt(index)] = value;
+    }
   });
 
   return defaults;
