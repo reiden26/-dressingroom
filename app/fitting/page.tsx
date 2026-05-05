@@ -12,6 +12,7 @@ import { MOCK_CATALOG, type MockGarment, findMatchingSize } from '@/lib/mockCata
 import { useAppStore } from '@/store/useAppStore';
 import { useTryOn } from '@/lib/useTryOn';
 import { type LightingPresetId } from '@/lib/lightingPresets';
+import { getPose } from '@/lib/storage';
 
 type CategoryFilter = 'all' | 'top' | 'bottom' | 'dress' | 'outerwear';
 
@@ -24,12 +25,31 @@ export default function FittingPage() {
   const [showGallery, setShowGallery] = useState(false);
   const [showPoseSelector, setShowPoseSelector] = useState(false);
   const [showEditor, setShowEditor] = useState(false);
-  const { userProfile, capturedPoses } = useAppStore();
+  const { userProfile, capturedPoses, addCapturedPose } = useAppStore();
+
+  // capturedPoses lives only in memory (not persisted — images are too large
+  // for localStorage). On mount, restore the front pose from IndexedDB so
+  // the catalog correctly recognises a completed scan after navigation or reload.
+  useEffect(() => {
+    const hasFront = capturedPoses.some((p) => p.poseId === 'front');
+    if (hasFront) return; // already in memory, nothing to do
+
+    getPose('front')
+      .then((pose) => {
+        if (pose) addCapturedPose(pose);
+      })
+      .catch(console.error);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const userFrontImage = useMemo(() => {
     const front = capturedPoses.find((p) => p.poseId === 'front');
     return front?.imageDataUrl || null;
   }, [capturedPoses]);
+
+  // A scan is considered complete when the user has measurements saved in
+  // their profile (persisted to localStorage). This is more reliable than
+  // checking for the in-memory front image, which is lost on navigation.
+  const hasMeasurements = !!userProfile?.measurements;
 
   const {
     status,
@@ -42,12 +62,6 @@ export default function FittingPage() {
     rateLook,
     deleteLook,
   } = useTryOn(userFrontImage);
-
-  useEffect(() => {
-    if (!userFrontImage && !userProfile?.measurements) {
-      // User has no front image, might need to redirect to scan
-    }
-  }, [userFrontImage, userProfile]);
 
   const filteredGarments = useMemo(() => {
     if (selectedCategory === 'all') return MOCK_CATALOG;
@@ -147,37 +161,6 @@ export default function FittingPage() {
     <main className="min-h-screen bg-black">
       <Navbar />
 
-      {/* Floating "looks" button (top right) */}
-      <button
-        onClick={() => setShowGallery(true)}
-        className="fixed top-4 right-4 z-40 w-11 h-11 rounded-full flex items-center justify-center transition-colors hover:bg-white/10"
-        style={{
-          background: 'rgba(255,255,255,0.06)',
-          border: '1px solid rgba(255,255,255,0.12)',
-          backdropFilter: 'blur(12px)',
-          WebkitBackdropFilter: 'blur(12px)',
-        }}
-        title="Mis looks"
-        aria-label="Mis looks guardados"
-      >
-        <svg className="w-4 h-4 text-white/80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={1.5}
-            d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
-          />
-        </svg>
-        {looks.length > 0 && (
-          <span
-            className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 text-[10px] font-medium text-black rounded-full flex items-center justify-center"
-            style={{ background: '#7dd3fc' }}
-          >
-            {looks.length > 9 ? '9+' : looks.length}
-          </span>
-        )}
-      </button>
-
       {/* Header */}
       <section className="pt-32 pb-10 px-6 lg:px-12">
         <div className="max-w-[1400px] mx-auto">
@@ -198,7 +181,7 @@ export default function FittingPage() {
       </section>
 
       <div className="max-w-[1400px] mx-auto px-6 lg:px-12 pb-20">
-        {!userFrontImage && (
+        {!hasMeasurements && (
           <div
             className="mb-8 p-4 rounded-2xl flex items-start sm:items-center gap-3 flex-col sm:flex-row"
             style={{
@@ -220,7 +203,7 @@ export default function FittingPage() {
               />
             </svg>
             <p className="text-white/80 text-[14px] leading-relaxed flex-1">
-              Necesitas una foto frontal para probarte ropa con IA.
+              Escanea tu cuerpo para recibir recomendaciones de talla y probarte ropa con IA.
             </p>
             <button
               onClick={handleGoToScan}
@@ -323,6 +306,22 @@ export default function FittingPage() {
                   )}
 
                   {userFrontImage ? (
+                    <button
+                      onClick={handleTryOn}
+                      className="w-full py-3 bg-white text-black font-medium rounded-full hover:bg-white/90 transition-colors flex items-center justify-center gap-2 text-[13px]"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M13 10V3L4 14h7v7l9-11h-7z"
+                        />
+                      </svg>
+                      Probarme con IA
+                    </button>
+                  ) : hasMeasurements ? (
+                    // Measurements exist but front image not yet loaded from IndexedDB
                     <button
                       onClick={handleTryOn}
                       className="w-full py-3 bg-white text-black font-medium rounded-full hover:bg-white/90 transition-colors flex items-center justify-center gap-2 text-[13px]"

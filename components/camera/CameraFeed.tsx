@@ -18,6 +18,8 @@ export type Landmark = { x: number; y: number; z: number; visibility: number };
 interface CameraFeedProps {
   className?: string;
   onStatusChange?: (status: CameraStatus) => void;
+  /** When false the camera is not started. Set to true to request access. */
+  active?: boolean;
 }
 
 export interface CameraFeedRef {
@@ -27,7 +29,7 @@ export interface CameraFeedRef {
 }
 
 const CameraFeed = forwardRef<CameraFeedRef, CameraFeedProps>(
-  ({ className = '', onStatusChange }, ref) => {
+  ({ className = '', onStatusChange, active = false }, ref) => {
     const videoRef = useRef<HTMLVideoElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [error, setError] = useState<string | null>(null);
@@ -102,9 +104,9 @@ const CameraFeed = forwardRef<CameraFeedRef, CameraFeedProps>(
       };
     }, []);
 
-    // Detection loop
+    // Detection loop — only runs when BOTH model and camera are ready
     useEffect(() => {
-      if (!isModelLoaded) return;
+      if (!isModelLoaded || !cameraReady) return;
 
       const video = videoRef.current;
       const canvas = canvasRef.current;
@@ -198,75 +200,151 @@ const CameraFeed = forwardRef<CameraFeedRef, CameraFeedProps>(
       };
     }, [isModelLoaded]);
 
-    // Start camera
+    // Start camera — with auto-retry when a device becomes available
     useEffect(() => {
+      if (!active) return; // wait until parent requests camera
+
       let mounted = true;
+      let retryTimeout: ReturnType<typeof setTimeout> | null = null;
 
       async function startCamera() {
+        // Stop any existing stream before retrying
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach((t) => t.stop());
+          streamRef.current = null;
+        }
+
+        if (mounted) {
+          setError(null);
+          setCameraReady(false);
+          setIsLoading(true);
+        }
+
+        // Check if any video input device exists
+        let hasCamera = false;
+        try {
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          // After permission is granted labels are populated; before that we
+          // still get entries with empty labels but kind === 'videoinput'
+          hasCamera = devices.some((d) => d.kind === 'videoinput');
+        } catch {
+          hasCamera = true; // assume one exists if we can't enumerate
+        }
+
+        if (!hasCamera) {
+          if (mounted) {
+            setError('No se encontró ninguna cámara. Conecta una y espera…');
+            setIsLoading(false);
+            retryTimeout = setTimeout(() => { if (mounted) startCamera(); }, 3000);
+          }
+          return;
+        }
+
         try {
           console.log('📷 Iniciando cámara...');
           const stream = await navigator.mediaDevices.getUserMedia({
-            video: {
-              width: { ideal: 1280 },
-              height: { ideal: 720 },
-              facingMode: 'user',
-            },
+            video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
             audio: false,
           });
 
+          if (!mounted) {
+            stream.getTracks().forEach((t) => t.stop());
+            return;
+          }
+
           streamRef.current = stream;
 
-          if (mounted && videoRef.current) {
+          if (videoRef.current) {
             videoRef.current.srcObject = stream;
             videoRef.current.onloadedmetadata = async () => {
-              if (mounted && videoRef.current && canvasRef.current) {
-                canvasRef.current.width = videoRef.current.videoWidth;
-                canvasRef.current.height = videoRef.current.videoHeight;
-                console.log('📐 Video listo:', videoRef.current.videoWidth, 'x', videoRef.current.videoHeight);
-                await videoRef.current.play();
+              if (!mounted || !videoRef.current || !canvasRef.current) return;
+              canvasRef.current.width  = videoRef.current.videoWidth;
+              canvasRef.current.height = videoRef.current.videoHeight;
+              console.log('📐 Video listo:', videoRef.current.videoWidth, 'x', videoRef.current.videoHeight);
+              await videoRef.current.play();
+              if (mounted) {
+                setIsLoading(false);
                 setCameraReady(true);
               }
             };
           }
         } catch (err) {
           if (!mounted) return;
-          const error = err as Error;
-          console.error('❌ Error cámara:', error.name, error.message);
-          if (error.name === 'NotAllowedError') {
-            setError('Permiso denegado. Permite el acceso a la cámara.');
-          } else if (error.name === 'NotFoundError') {
-            setError('No se encontró cámara.');
-          } else if (error.name === 'NotReadableError') {
-            setError('Cámara en uso por otra app.');
+          const camError = err as Error;
+          console.error('❌ Error cámara:', camError.name, camError.message);
+          setIsLoading(false);
+
+          if (camError.name === 'NotAllowedError') {
+            // User denied permission — no retry
+            setError('Permiso denegado. Permite el acceso a la cámara en tu navegador.');
+          } else if (camError.name === 'NotFoundError' || camError.name === 'DevicesNotFoundError') {
+            // No camera hardware found
+            setError('No se encontró ninguna cámara. Conecta una y espera…');
+            retryTimeout = setTimeout(() => { if (mounted) startCamera(); }, 3000);
+          } else if (camError.name === 'NotReadableError' || camError.name === 'AbortError') {
+            // NotReadableError can mean either "in use" OR "no device" depending on
+            // the OS/driver. Re-check device list to distinguish the two cases.
+            let stillNoCamera = false;
+            try {
+              const devices = await navigator.mediaDevices.enumerateDevices();
+              stillNoCamera = !devices.some((d) => d.kind === 'videoinput');
+            } catch { /* ignore */ }
+
+            if (stillNoCamera) {
+              setError('No se encontró ninguna cámara. Conecta una y espera…');
+            } else {
+              setError('La cámara está siendo usada por otra aplicación. Ciérrala e intenta de nuevo…');
+            }
+            retryTimeout = setTimeout(() => { if (mounted) startCamera(); }, 4000);
+          } else if (camError.name === 'OverconstrainedError') {
+            // Retry without constraints
+            try {
+              const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+              if (!mounted) { stream.getTracks().forEach((t) => t.stop()); return; }
+              streamRef.current = stream;
+              if (videoRef.current) {
+                videoRef.current.srcObject = stream;
+                videoRef.current.onloadedmetadata = async () => {
+                  if (!mounted || !videoRef.current || !canvasRef.current) return;
+                  canvasRef.current.width  = videoRef.current.videoWidth;
+                  canvasRef.current.height = videoRef.current.videoHeight;
+                  await videoRef.current.play();
+                  if (mounted) { setIsLoading(false); setCameraReady(true); }
+                };
+              }
+            } catch {
+              setError('No se pudo acceder a la cámara.');
+            }
           } else {
-            setError('Error: ' + error.message);
+            setError('Error al acceder a la cámara: ' + camError.message);
           }
-        } finally {
-          if (mounted) setIsLoading(false);
         }
       }
 
+      // Listen for device changes (camera plugged in / unplugged)
+      const handleDeviceChange = () => {
+        if (!mounted) return;
+        if (retryTimeout) { clearTimeout(retryTimeout); retryTimeout = null; }
+        startCamera();
+      };
+
+      navigator.mediaDevices?.addEventListener('devicechange', handleDeviceChange);
       startCamera();
 
       return () => {
         mounted = false;
+        if (retryTimeout) clearTimeout(retryTimeout);
+        navigator.mediaDevices?.removeEventListener('devicechange', handleDeviceChange);
         if (streamRef.current) {
           streamRef.current.getTracks().forEach((t) => t.stop());
           streamRef.current = null;
         }
       };
-    }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [active]);
 
-    if (error) {
-      return (
-        <div className={`flex flex-col items-center justify-center bg-black ${className}`}>
-          <svg className="w-10 h-10 text-white/40 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-          </svg>
-          <p className="text-white/60 text-sm text-center px-6 max-w-xs leading-relaxed">{error}</p>
-        </div>
-      );
-    }
+    // Error and inactive states are rendered by the parent (scan page)
+    // so the message appears inside the camera viewport, not below it.
 
     return (
       <div className={`relative overflow-hidden bg-black ${className}`}>

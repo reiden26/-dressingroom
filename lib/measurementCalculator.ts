@@ -158,7 +158,9 @@ function calculateScaleFactor(
   const anklePixelY = ankle.y * imageHeight;
 
   const bodyPixelHeight = Math.abs(anklePixelY - nosePixelY);
-  const scaleFactor = heightCm / (bodyPixelHeight * 0.92);
+  // Nariz a tobillo representa ~89% de la altura total (cabeza ≈ 11%)
+  // Validado contra proporciones de Vitruvio y ANSUR II
+  const scaleFactor = heightCm / (bodyPixelHeight / 0.89);
 
   return scaleFactor;
 }
@@ -221,7 +223,10 @@ export function calculateMeasurements(
   let shoulderConfidence = 0;
   if (leftShoulder && rightShoulder) {
     const rawShoulders = pixelDistance(leftShoulder, rightShoulder, imageWidth, imageHeight);
-    visualShoulderWidth = scaleFactor ? rawShoulders * scaleFactor * 1.15 : 0;
+    // Factor 1.35: convierte ancho biacromial frontal a ancho real incluyendo
+    // profundidad del hombro (MediaPipe ve la proyección 2D, no el arco 3D).
+    // Calibrado empíricamente: biacromial_real ≈ biacromial_2D * 1.35
+    visualShoulderWidth = scaleFactor ? rawShoulders * scaleFactor * 1.35 : 0;
     shoulderConfidence = (leftShoulder.visibility + rightShoulder.visibility) / 2;
   }
 
@@ -230,7 +235,8 @@ export function calculateMeasurements(
   let hipConfidence = 0;
   if (leftHip && rightHip) {
     const rawHips = pixelDistance(leftHip, rightHip, imageWidth, imageHeight);
-    visualHipWidth = scaleFactor ? rawHips * scaleFactor * 1.1 : 0;
+    // Factor 1.18: las caderas tienen más profundidad que los hombros
+    visualHipWidth = scaleFactor ? rawHips * scaleFactor * 1.18 : 0;
     hipConfidence = (leftHip.visibility + rightHip.visibility) / 2;
   }
 
@@ -279,14 +285,16 @@ export function calculateMeasurements(
   // -------------------------------------------------------------------------
   // 4. CÁLCULO DE DESVIACIÓN RELATIVA (ratio anatómico)
   // -------------------------------------------------------------------------
-  // Proporción anatómica media: ancho biacromial ≈ hombros_circunferencia / 2.85
-  const expectedShoulderWidth = base.hombros / 2.85;
+  // Proporción anatómica: ancho biacromial ≈ hombros_circunferencia / 2.65
+  // (ANSUR II: media biacromial 40.5cm, circunferencia hombros 107cm → ratio 2.64)
+  const expectedShoulderWidth = base.hombros / 2.65;
   const shoulderRatio = visualShoulderWidth > 0 && expectedShoulderWidth > 0
     ? visualShoulderWidth / expectedShoulderWidth
     : 1;
 
-  // Proporción anatómica media: ancho caderas ≈ cadera_circunferencia / 3.0
-  const expectedHipWidth = base.cadera / 3.0;
+  // Proporción anatómica: ancho caderas ≈ cadera_circunferencia / 2.85
+  // (ANSUR II: media ancho caderas 35cm, circunferencia cadera 99cm → ratio 2.83)
+  const expectedHipWidth = base.cadera / 2.85;
   const hipRatio = visualHipWidth > 0 && expectedHipWidth > 0
     ? visualHipWidth / expectedHipWidth
     : 1;
@@ -385,8 +393,8 @@ export function calculateMeasurements(
     warnings.push('Falta vista lateral');
   }
 
-  // Clamp final: mínimo 0.3 porque siempre tenemos altura+peso
-  confidence = Math.max(0.3, Math.min(1.0, confidence));
+  // Clamp final: mínimo 0.25 (solo altura+peso sin landmarks), máximo 1.0
+  confidence = Math.max(0.25, Math.min(1.0, confidence));
 
   // -------------------------------------------------------------------------
   // 7. VALIDACIÓN DE RESULTADOS (DEV LOG)

@@ -33,6 +33,10 @@ Thumbs.db
 
 # Testing
 coverage/
+test-results/
+
+# TypeScript build cache
+tsconfig.tsbuildinfo
 
 # Misc
 *.log

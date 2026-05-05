@@ -10,7 +10,9 @@ import { POSES } from '@/lib/constants';
 import { savePose, saveProfile, saveMeasurements, getAllPoses } from '@/lib/storage';
 import { calculateMeasurements } from '@/lib/measurementCalculator';
 import { validateMeasurements } from '@/lib/anatomicalValidation';
-import type { CapturedPose, BodyMeasurements } from '@/lib/types';
+import { syncProfileToSupabase, saveScanToSupabase } from '@/lib/supabase/profile';
+import { captureError } from '@/lib/monitoring';
+import type { CapturedPose, BodyMeasurements, LandmarkWithVisibility } from '@/lib/types';
 
 const POSE_STEPS = ['front', 'side', 'back'] as const;
 type PoseType = typeof POSE_STEPS[number];
@@ -76,7 +78,7 @@ export default function ScanPage() {
     side: null,
     back: null,
   });
-  const [capturedLandmarks, setCapturedLandmarks] = useState<Record<PoseType, unknown[]>>({
+  const [capturedLandmarks, setCapturedLandmarks] = useState<Record<PoseType, LandmarkWithVisibility[]>>({
     front: [],
     side: [],
     back: [],
@@ -104,7 +106,7 @@ export default function ScanPage() {
           const next = { ...prev };
           for (const p of stored) {
             if (POSE_STEPS.includes(p.poseId as PoseType)) {
-              next[p.poseId as PoseType] = (p.landmarks as unknown[]) ?? [];
+              next[p.poseId as PoseType] = (p.landmarks ?? []) as LandmarkWithVisibility[];
             }
           }
           return next;
@@ -130,6 +132,9 @@ export default function ScanPage() {
     detectionState: 'no_person',
     coveragePercent: 0,
   });
+
+  // Camera is not started automatically — user must press the button
+  const [cameraActive, setCameraActive] = useState(false);
 
   // Stable callback so CameraFeed doesn't re-fire on every render
   const handleStatusChange = useCallback((s: CameraStatus) => {
@@ -255,7 +260,7 @@ export default function ScanPage() {
     await new Promise((resolve) => setTimeout(resolve, 1500));
 
     if (userProfile && capturedLandmarks.front.length > 0) {
-      const frontLandmarks = capturedLandmarks.front.map((l: any) => ({
+      const frontLandmarks = capturedLandmarks.front.map((l) => ({
         x: l.x,
         y: l.y,
         z: l.z,
@@ -263,7 +268,7 @@ export default function ScanPage() {
       }));
 
       const sideLandmarks = capturedLandmarks.side.length > 0
-        ? capturedLandmarks.side.map((l: any) => ({
+        ? capturedLandmarks.side.map((l) => ({
             x: l.x,
             y: l.y,
             z: l.z,
@@ -289,7 +294,23 @@ export default function ScanPage() {
       // successful capture, which is confusing for the user.
       const finalMeasurements = result.measurements;
       setUserProfile({ ...userProfile, measurements: finalMeasurements });
+      // Persist locally (IndexedDB)
       saveMeasurements(finalMeasurements).catch(console.error);
+      // Sync to Supabase — saves profile + measurements + photos in one record
+      const allPoses = Object.entries(capturedImages)
+        .filter(([, url]) => url)
+        .map(([poseId, imageDataUrl]) => ({
+          poseId: poseId as 'front' | 'side' | 'back',
+          imageDataUrl: imageDataUrl!,
+          capturedAt: new Date(),
+          landmarks: capturedLandmarks[poseId as 'front' | 'side' | 'back'],
+        }));
+      syncProfileToSupabase({ ...userProfile, measurements: finalMeasurements }).catch((err) =>
+        captureError(err, { context: 'syncProfileToSupabase' })
+      );
+      saveScanToSupabase(finalMeasurements, allPoses, userProfile).catch((err) =>
+        captureError(err, { context: 'saveScanToSupabase' })
+      );
 
       setAnalysisResult({
         measurements: result.measurements,
@@ -307,9 +328,10 @@ export default function ScanPage() {
   // page flashes step 1 (height/weight) for users that already have a
   // persisted profile, which on a quick remount looks like the captures
   // were thrown away.
+  // Also prevents hydration mismatch from Navbar's useSession hook.
   if (!hydrated) {
     return (
-      <main className="min-h-screen bg-black flex items-center justify-center">
+      <main className="min-h-screen bg-black flex items-center justify-center" suppressHydrationWarning>
         <div className="w-10 h-10 border border-white/15 border-t-white rounded-full animate-spin" />
       </main>
     );
@@ -601,7 +623,59 @@ export default function ScanPage() {
             ref={cameraRef}
             className="w-full h-full"
             onStatusChange={handleStatusChange}
+            active={cameraActive}
           />
+
+          {/* ── Not started yet — show activate button ── */}
+          {!cameraActive && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-5 z-20 bg-black/80 backdrop-blur-sm">
+              <div className="w-16 h-16 rounded-full flex items-center justify-center" style={{ border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.05)' }}>
+                <svg className="w-7 h-7 text-white/60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10l4.553-2.069A1 1 0 0121 8.82v6.36a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h10a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" />
+                </svg>
+              </div>
+              <div className="text-center px-6">
+                <p className="text-white text-[15px] font-medium mb-1">Cámara desactivada</p>
+                <p className="text-white/40 text-[13px]">Toca el botón para iniciar</p>
+              </div>
+              <button
+                onClick={() => setCameraActive(true)}
+                className="flex items-center gap-2 h-11 px-6 rounded-full bg-white text-black text-[13px] font-medium hover:bg-white/90 active:scale-[0.98] transition-all"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Activar cámara
+              </button>
+            </div>
+          )}
+
+          {/* ── Camera error — shown inside viewport ── */}
+          {cameraActive && cameraStatus.error && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 z-20 bg-black/85 backdrop-blur-sm px-6">
+              <div className="w-14 h-14 rounded-full flex items-center justify-center" style={{ border: '1px solid rgba(244,63,94,0.3)', background: 'rgba(244,63,94,0.08)' }}>
+                <svg className="w-6 h-6 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+              </div>
+              <p className="text-white/80 text-[13px] text-center leading-relaxed max-w-[220px]">
+                {cameraStatus.error}
+              </p>
+              {(cameraStatus.error.includes('espera') || cameraStatus.error.includes('intentando')) && (
+                <div className="flex items-center gap-2 text-[11px] font-mono text-white/30">
+                  <span className="w-3 h-3 border border-white/20 border-t-white/50 rounded-full animate-spin" />
+                  Reintentando…
+                </div>
+              )}
+              <button
+                onClick={() => { setCameraActive(false); setTimeout(() => setCameraActive(true), 100); }}
+                className="flex items-center gap-1.5 h-9 px-4 rounded-full border border-white/15 text-white/60 hover:text-white hover:bg-white/5 text-[12px] font-medium transition-colors"
+              >
+                Reintentar
+              </button>
+            </div>
+          )}
 
           {/* Live status pill in viewport */}
           {!capturedImages[currentPose.id] && cameraStatus.cameraReady && cameraStatus.modelLoaded && !cameraStatus.error && (
@@ -693,7 +767,13 @@ export default function ScanPage() {
                   canCapture ? 'text-white/40' : 'text-white/50'
                 }`}
               >
-                {canCapture ? 'Toca para capturar' : captureBlockedReason}
+                {canCapture
+                  ? 'Toca para capturar'
+                  : /* Only show blocked reason when camera is active and working — not for camera errors */
+                    (!cameraActive || cameraStatus.error)
+                    ? 'Activa la cámara para capturar'
+                    : captureBlockedReason
+                }
               </p>
             </>
           ) : (

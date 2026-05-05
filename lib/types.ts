@@ -26,6 +26,8 @@ export interface BodyMeasurements {
   confidence: number;
   /** BMI used at calculation time (height/weight derived) */
   bmi?: number;
+  /** True when measurements are statistical estimates (no landmark data) */
+  isEstimated?: boolean;
 }
 
 export interface BodyMeasurementsResult {

@@ -3,8 +3,9 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { useSession } from '@/lib/useSession';
 
-const navItems = [
+const baseNavItems = [
   {
     href: '/',
     label: 'Inicio',
@@ -26,32 +27,42 @@ const navItems = [
   },
   {
     href: '/fitting',
-    label: 'Catalogo',
+    label: 'Catálogo',
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
       </svg>
     ),
   },
-  {
-    href: '/profile',
-    label: 'Perfil',
-    icon: (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-      </svg>
-    ),
-  },
 ];
+
+const profileItem = {
+  href: '/profile',
+  label: 'Perfil',
+  icon: (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+    </svg>
+  ),
+};
+
+const loginItem = {
+  href: '/auth/login',
+  label: 'Acceder',
+  icon: (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
+    </svg>
+  ),
+};
 
 export default function BottomNav() {
   const pathname = usePathname();
+  const { user } = useSession();
   const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
-    const checkMobile = () => {
-      setIsMobile(window.innerWidth < 768);
-    };
+    const checkMobile = () => setIsMobile(window.innerWidth < 768);
     checkMobile();
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
@@ -59,20 +70,28 @@ export default function BottomNav() {
 
   if (!isMobile) return null;
 
+  const navItems = [...baseNavItems, user ? profileItem : loginItem];
+
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 px-4 pb-4">
-      <div className="mx-auto max-w-sm px-2 py-2 rounded-2xl" style={{ background: 'rgba(255,255,255,0.08)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.12)' }}>
+      <div
+        className="mx-auto max-w-sm px-2 py-2 rounded-2xl"
+        style={{
+          background: 'rgba(255,255,255,0.08)',
+          backdropFilter: 'blur(12px)',
+          WebkitBackdropFilter: 'blur(12px)',
+          border: '1px solid rgba(255,255,255,0.12)',
+        }}
+      >
         <div className="flex items-center justify-around">
           {navItems.map((item) => {
-            const isActive = pathname === item.href;
+            const isActive = pathname === item.href || (item.href !== '/' && pathname?.startsWith(item.href));
             return (
               <Link
                 key={item.href}
                 href={item.href}
                 className={`flex flex-col items-center gap-1 px-4 py-2 rounded-xl transition-all ${
-                  isActive
-                    ? 'bg-white/30 text-white'
-                    : 'text-white/50 hover:text-white'
+                  isActive ? 'bg-white/30 text-white' : 'text-white/50 hover:text-white'
                 }`}
               >
                 {item.icon}

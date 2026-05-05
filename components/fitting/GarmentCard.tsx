@@ -128,9 +128,9 @@ export default function GarmentCard({ garment, onSelect, isSelected = false }: G
         <h3 className="text-[14px] font-medium text-white leading-snug truncate">{garment.name}</h3>
         <div className="mt-2 flex items-center justify-between gap-2">
           <span className="text-[11px] text-white/50 truncate">{garment.color}</span>
-          {garment.priceUsd != null && (
+          {garment.price != null && (
             <span className="text-[11px] font-mono text-white/70">
-              ${garment.priceUsd}
+              ${garment.price}
             </span>
           )}
         </div>
